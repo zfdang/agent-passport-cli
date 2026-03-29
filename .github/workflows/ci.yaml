@@ -31,10 +31,9 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kitepass-cli -> target
+          workspaces: . -> target
 
       - name: Check formatting
-        working-directory: kitepass-cli
         run: cargo fmt --all -- --check
 
   clippy-check:
@@ -53,10 +52,9 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kitepass-cli -> target
+          workspaces: . -> target
 
       - name: Run clippy
-        working-directory: kitepass-cli
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
@@ -73,10 +71,9 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kitepass-cli -> target
+          workspaces: . -> target
 
       - name: Run tests
-        working-directory: kitepass-cli
         run: cargo test --workspace --locked
 
   build-smoke:
@@ -93,12 +90,10 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kitepass-cli -> target
+          workspaces: . -> target
 
       - name: Build workspace
-        working-directory: kitepass-cli
         run: cargo build --workspace --locked
 
       - name: Smoke test CLI binary
-        working-directory: kitepass-cli
         run: cargo run -p kitepass-cli --bin kitepass -- --help

@@ -79,18 +79,16 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kitepass-cli -> target
+          workspaces: . -> target
 
       - name: Build release binary with cargo
         if: ${{ !matrix.use_zigbuild }}
-        working-directory: kitepass-cli
         env:
           KITEPASS_CLI_GIT_REVISION: ${{ github.sha }}
         run: cargo build --locked --release --target ${{ matrix.target }} -p kitepass-cli --bin kitepass
 
       - name: Build release binary with cargo-zigbuild
         if: ${{ matrix.use_zigbuild }}
-        working-directory: kitepass-cli
         env:
           KITEPASS_CLI_GIT_REVISION: ${{ github.sha }}
         run: cargo zigbuild --locked --release --target ${{ matrix.target }} -p kitepass-cli --bin kitepass
@@ -98,13 +96,13 @@ jobs:
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: kitepass-cli/target/${{ matrix.target }}/release/kitepass
+          subject-path: target/${{ matrix.target }}/release/kitepass
 
       - name: Upload raw binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: kitepass-cli/target/${{ matrix.target }}/release/kitepass
+          path: target/${{ matrix.target }}/release/kitepass
           if-no-files-found: error
 
   package-release-archives:
