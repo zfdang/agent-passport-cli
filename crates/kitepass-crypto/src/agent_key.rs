@@ -33,7 +33,9 @@ impl AgentKey {
     /// Exports the private key in PKCS#8 PEM format.
     /// The private key should be zeroized after use.
     pub fn export_pem(&self) -> Result<String, AgentKeyError> {
-        let doc = self.signing_key.to_pkcs8_pem(Default::default())
+        let doc = self
+            .signing_key
+            .to_pkcs8_pem(Default::default())
             .map_err(|e| AgentKeyError::SerializationError(e.to_string()))?;
         Ok(doc.to_string())
     }

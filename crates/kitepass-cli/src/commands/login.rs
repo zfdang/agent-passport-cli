@@ -7,7 +7,10 @@ use tokio::time::sleep;
 /// Owner login via device-code flow.
 pub async fn run() -> Result<()> {
     let mut config = CliConfig::load_default().unwrap_or_default();
-    let api_url = config.api_url.as_deref().unwrap_or("https://api.kitepass.ai");
+    let api_url = config
+        .api_url
+        .as_deref()
+        .unwrap_or("https://api.kitepass.ai");
 
     let client = PassportClient::new(api_url);
 
@@ -37,11 +40,13 @@ pub async fn run() -> Result<()> {
                 if let Some(token) = poll_res.access_token {
                     println!("Successfully authenticated!");
                     config.access_token = Some(token);
-                    config.save_default().context("Failed to save credentials locally")?;
+                    config
+                        .save_default()
+                        .context("Failed to save credentials locally")?;
                     println!("Token saved to config file.");
                     return Ok(());
                 }
-                
+
                 if let Some(error) = poll_res.error {
                     if error != "authorization_pending" {
                         anyhow::bail!("Authorization failed: {}", error);

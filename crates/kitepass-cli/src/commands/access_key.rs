@@ -7,8 +7,14 @@ use std::fs;
 
 pub async fn run(action: AccessKeyAction) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
-    let api_url = config.api_url.as_deref().unwrap_or("https://api.kitepass.ai");
-    let token = config.access_token.clone().context("Please run `kitepass login` first")?;
+    let api_url = config
+        .api_url
+        .as_deref()
+        .unwrap_or("https://api.kitepass.ai");
+    let token = config
+        .access_token
+        .clone()
+        .context("Please run `kitepass login` first")?;
 
     let client = PassportClient::new(api_url).with_token(token);
 
@@ -27,7 +33,9 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
             let keys_dir = config_dir().join("keys");
             fs::create_dir_all(&keys_dir).context("Failed to create keys directory")?;
 
-            let pem = key.export_pem().context("Failed to serialize private key")?;
+            let pem = key
+                .export_pem()
+                .context("Failed to serialize private key")?;
             let key_filename = format!("{}.pem", pubkey_hex[..8].to_string());
             let key_path = keys_dir.join(&key_filename);
 
@@ -36,9 +44,12 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut options = fs::OpenOptions::new();
                 options.write(true).create(true).truncate(true).mode(0o600);
-                let mut file = options.open(&key_path).context("Failed to securely open key file")?;
+                let mut file = options
+                    .open(&key_path)
+                    .context("Failed to securely open key file")?;
                 use std::io::Write;
-                file.write_all(pem.as_bytes()).context("Failed to write key to disk")?;
+                file.write_all(pem.as_bytes())
+                    .context("Failed to write key to disk")?;
             }
 
             #[cfg(not(unix))]
@@ -52,7 +63,9 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
 
             println!("⚠️ IMPORTANT: The private key string above has been securely saved to:");
             println!("   {:?}", key_path);
-            println!("   Please back it up and do not share it with anyone. It will not be shown again.\n");
+            println!(
+                "   Please back it up and do not share it with anyone. It will not be shown again.\n"
+            );
 
             // 3. Register public key on Passport Gateway
             println!("Registering public key with Gateway: {}", pubkey_hex);
@@ -61,7 +74,10 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .await
                 .context("Failed to register access key")?;
 
-            println!("Agent Access Key registered successfully. Key ID: {}", res.key_id);
+            println!(
+                "Agent Access Key registered successfully. Key ID: {}",
+                res.key_id
+            );
         }
         AccessKeyAction::Get { key_id } => {
             println!("kitepass access-key get: {key_id}");

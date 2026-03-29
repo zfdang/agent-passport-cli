@@ -47,9 +47,9 @@ pub struct ImportSessionRequest {
 #[derive(Deserialize, Debug)]
 pub struct ImportSessionResponse {
     pub session_id: String,
-    pub vault_signer_url: String, // Public read-only endpoint
+    pub vault_signer_url: String,    // Public read-only endpoint
     pub vault_signer_pubkey: String, // hex encoded
-    pub vault_nonce: String, // hex encoded
+    pub vault_nonce: String,         // hex encoded
     pub attestation_doc: String,
 }
 
@@ -112,7 +112,10 @@ impl PassportClient {
             Ok(res.json::<T>().await?)
         } else {
             let msg = res.text().await.unwrap_or_default();
-            Err(ApiError::HttpStatus { status, message: msg })
+            Err(ApiError::HttpStatus {
+                status,
+                message: msg,
+            })
         }
     }
 
@@ -140,7 +143,13 @@ impl PassportClient {
     ) -> Result<ImportSessionResponse, ApiError> {
         let url = format!("{}/v1/wallets/import-sessions", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(&ImportSessionRequest { chain: chain.to_string(), name }).send().await?;
+        let res = req
+            .json(&ImportSessionRequest {
+                chain: chain.to_string(),
+                name,
+            })
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 
@@ -151,10 +160,13 @@ impl PassportClient {
     ) -> Result<UploadWalletCiphertextResponse, ApiError> {
         let url = format!("{}/v1/wallets/import", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(&UploadWalletCiphertextRequest {
-            session_id: session_id.to_string(),
-            ciphertext_hex: ciphertext_hex.to_string(),
-        }).send().await?;
+        let res = req
+            .json(&UploadWalletCiphertextRequest {
+                session_id: session_id.to_string(),
+                ciphertext_hex: ciphertext_hex.to_string(),
+            })
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 
@@ -167,10 +179,13 @@ impl PassportClient {
     ) -> Result<RegisterAccessKeyResponse, ApiError> {
         let url = format!("{}/v1/access-keys", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(&RegisterAccessKeyRequest {
-            public_key_hex: public_key_hex.to_string(),
-            name,
-        }).send().await?;
+        let res = req
+            .json(&RegisterAccessKeyRequest {
+                public_key_hex: public_key_hex.to_string(),
+                name,
+            })
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 }

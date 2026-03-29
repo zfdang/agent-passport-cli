@@ -1,9 +1,9 @@
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce as GcmNonce}; // 12-byte nonce
 use hkdf::Hkdf;
-use sha2::Sha256;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
+use sha2::Sha256;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EnvelopeError {
@@ -103,10 +103,12 @@ mod tests {
         let vault_nonce = [3u8; 32];
         let plaintext = b"wallet-secret-data-12345";
 
-        let encrypted = Envelope::encrypt(&shared_secret, &pubkey, &vault_nonce, plaintext).unwrap();
+        let encrypted =
+            Envelope::encrypt(&shared_secret, &pubkey, &vault_nonce, plaintext).unwrap();
         assert_ne!(encrypted, plaintext);
 
-        let decrypted = Envelope::decrypt(&shared_secret, &pubkey, &vault_nonce, &encrypted).unwrap();
+        let decrypted =
+            Envelope::decrypt(&shared_secret, &pubkey, &vault_nonce, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
     }
 }

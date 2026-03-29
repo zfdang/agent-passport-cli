@@ -8,8 +8,14 @@ use kitepass_crypto::envelope::Envelope;
 
 pub async fn run(action: WalletAction) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
-    let api_url = config.api_url.as_deref().unwrap_or("https://api.kitepass.ai");
-    let token = config.access_token.clone().context("Please run `kitepass login` first")?;
+    let api_url = config
+        .api_url
+        .as_deref()
+        .unwrap_or("https://api.kitepass.ai");
+    let token = config
+        .access_token
+        .clone()
+        .context("Please run `kitepass login` first")?;
 
     let client = PassportClient::new(api_url).with_token(token);
 
@@ -75,7 +81,10 @@ pub async fn run(action: WalletAction) -> Result<()> {
                 .await
                 .context("Failed to upload wallet ciphertext")?;
 
-            println!("Wallet imported successfully! Wallet ID: {}", upload_res.wallet_id);
+            println!(
+                "Wallet imported successfully! Wallet ID: {}",
+                upload_res.wallet_id
+            );
         }
         WalletAction::Get { wallet_id } => {
             println!("kitepass wallet get: {wallet_id} (not implemented)");

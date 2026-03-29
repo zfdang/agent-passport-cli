@@ -47,7 +47,7 @@ impl CliConfig {
                 fs::create_dir_all(parent)?;
             }
         }
-        
+
         let content = toml::to_string(self)?;
 
         #[cfg(unix)]
@@ -98,9 +98,9 @@ mod tests {
 
         let mut conf = CliConfig::default();
         conf.access_token = Some("test_token_123".to_string());
-        
+
         conf.save(&path).unwrap();
-        
+
         let loaded = CliConfig::load(&path).unwrap();
         assert_eq!(loaded.access_token.as_deref(), Some("test_token_123"));
     }
