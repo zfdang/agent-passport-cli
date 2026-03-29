@@ -1,7 +1,6 @@
 use kitepass_api_client::PassportClient;
 use kitepass_crypto::ecdh::{EphemeralKey, parse_public_key};
 use kitepass_crypto::envelope::Envelope;
-use tokio;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

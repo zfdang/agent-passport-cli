@@ -42,10 +42,10 @@ impl CliConfig {
     /// Saves the configuration to the specified path safely.
     /// Creates directories if they don't exist and sets 0600 permissions on unix systems.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent)?;
         }
 
         let content = toml::to_string(self)?;
@@ -96,8 +96,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
 
-        let mut conf = CliConfig::default();
-        conf.access_token = Some("test_token_123".to_string());
+        let conf = CliConfig {
+            access_token: Some("test_token_123".to_string()),
+            ..Default::default()
+        };
 
         conf.save(&path).unwrap();
 

@@ -15,8 +15,8 @@ pub struct EphemeralKey {
 impl EphemeralKey {
     /// Generates a new ephemeral X25519 static secret.
     pub fn generate() -> Self {
-        let mut csprng = OsRng;
-        let secret = StaticSecret::random_from_rng(&mut csprng);
+        let csprng = OsRng;
+        let secret = StaticSecret::random_from_rng(csprng);
         Self { secret }
     }
 

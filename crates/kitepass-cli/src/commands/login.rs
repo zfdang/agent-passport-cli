@@ -47,10 +47,10 @@ pub async fn run() -> Result<()> {
                     return Ok(());
                 }
 
-                if let Some(error) = poll_res.error {
-                    if error != "authorization_pending" {
-                        anyhow::bail!("Authorization failed: {}", error);
-                    }
+                if let Some(error) = poll_res.error
+                    && error != "authorization_pending"
+                {
+                    anyhow::bail!("Authorization failed: {}", error);
                 }
             }
             Err(e) => {

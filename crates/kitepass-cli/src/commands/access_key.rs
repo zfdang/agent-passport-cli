@@ -36,7 +36,7 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
             let pem = key
                 .export_pem()
                 .context("Failed to serialize private key")?;
-            let key_filename = format!("{}.pem", pubkey_hex[..8].to_string());
+            let key_filename = format!("{}.pem", &pubkey_hex[..8]);
             let key_path = keys_dir.join(&key_filename);
 
             #[cfg(unix)]
