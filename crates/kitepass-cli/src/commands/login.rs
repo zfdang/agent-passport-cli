@@ -7,10 +7,7 @@ use tokio::time::sleep;
 /// Owner login via device-code flow.
 pub async fn run() -> Result<()> {
     let mut config = CliConfig::load_default().unwrap_or_default();
-    let api_url = config
-        .api_url
-        .as_deref()
-        .unwrap_or("https://api.kitepass.ai");
+    let api_url = config.resolved_api_url();
 
     let client = PassportClient::new(api_url);
 

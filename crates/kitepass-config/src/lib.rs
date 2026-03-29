@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
+
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("I/O error: {0}")]
@@ -71,6 +73,11 @@ impl CliConfig {
     /// Saves the configuration to the default path.
     pub fn save_default(&self) -> Result<(), ConfigError> {
         self.save(&config_path())
+    }
+
+    /// Resolves the configured API URL or falls back to the default public endpoint.
+    pub fn resolved_api_url(&self) -> &str {
+        self.api_url.as_deref().unwrap_or(DEFAULT_API_URL)
     }
 }
 

@@ -125,7 +125,21 @@ pub enum PolicyAction {
         #[arg(long)]
         name: String,
         #[arg(long)]
-        policy_type: String,
+        wallet_id: String,
+        #[arg(long)]
+        access_key_id: String,
+        #[arg(long = "allowed-chain", num_args = 1..)]
+        allowed_chains: Vec<String>,
+        #[arg(long = "allowed-action", num_args = 1..)]
+        allowed_actions: Vec<String>,
+        #[arg(long)]
+        max_single_amount: String,
+        #[arg(long)]
+        max_daily_amount: String,
+        #[arg(long = "allowed-destination")]
+        allowed_destinations: Vec<String>,
+        #[arg(long, default_value_t = 24)]
+        valid_for_hours: i64,
     },
     /// Get policy details
     Get {
@@ -147,9 +161,47 @@ pub enum PolicyAction {
 #[derive(Subcommand)]
 pub enum SignAction {
     /// Validate a sign intent (dry run)
-    Validate,
+    Validate {
+        #[arg(long)]
+        access_key_id: String,
+        #[arg(long)]
+        wallet_id: Option<String>,
+        #[arg(long, default_value = "auto")]
+        wallet_selector: String,
+        #[arg(long)]
+        chain_id: String,
+        #[arg(long, default_value = "transaction")]
+        signing_type: String,
+        #[arg(long)]
+        payload: String,
+        #[arg(long, default_value = "")]
+        destination: String,
+        #[arg(long, default_value = "0")]
+        value: String,
+    },
     /// Submit a signing request
-    Submit,
+    Submit {
+        #[arg(long)]
+        access_key_id: String,
+        #[arg(long)]
+        wallet_id: Option<String>,
+        #[arg(long, default_value = "auto")]
+        wallet_selector: String,
+        #[arg(long)]
+        chain_id: String,
+        #[arg(long, default_value = "transaction")]
+        signing_type: String,
+        #[arg(long)]
+        payload: String,
+        #[arg(long, default_value = "")]
+        destination: String,
+        #[arg(long, default_value = "0")]
+        value: String,
+        #[arg(long)]
+        key_path: String,
+        #[arg(long, default_value_t = false)]
+        sign_and_submit: bool,
+    },
 }
 
 #[derive(Subcommand)]

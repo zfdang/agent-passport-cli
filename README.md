@@ -2,6 +2,8 @@
 
 Command-line interface for **Kite Agent Passport**.
 
+Default API endpoint: `https://api.kitepass.xyz`
+
 ## Installation
 
 ```bash
@@ -18,6 +20,8 @@ curl -fsSL https://raw.githubusercontent.com/zfdang/kite-agent-passport-cli/main
 ## Usage
 
 ```bash
+# Uses https://api.kitepass.xyz by default
+
 # Login as wallet owner
 kitepass login
 
@@ -32,6 +36,12 @@ kitepass policy list
 
 # Check audit log
 kitepass audit list --wallet <wallet-id>
+```
+
+Override the endpoint for local or staging environments:
+
+```bash
+kitepass --api-url http://127.0.0.1:8080 login
 ```
 
 ## Development

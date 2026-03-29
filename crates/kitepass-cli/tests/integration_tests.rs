@@ -1,7 +1,10 @@
-use kitepass_api_client::PassportClient;
+use kitepass_api_client::{
+    AgentProof, ImportAad, PassportClient, SignRequest, SigningMode, UploadWalletCiphertextRequest,
+    ValidateSignIntentRequest,
+};
 use kitepass_crypto::ecdh::{EphemeralKey, parse_public_key};
 use kitepass_crypto::envelope::Envelope;
-use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -10,7 +13,7 @@ async fn test_login_device_flow() {
 
     // Mock device-code request
     Mock::given(method("POST"))
-        .and(path("/v1/owner/auth/device-code"))
+        .and(path("/v1/owner-auth/device-code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "device_code": "dev_123",
             "user_code": "USER-CODE",
@@ -23,10 +26,7 @@ async fn test_login_device_flow() {
 
     // Mock poll request
     Mock::given(method("POST"))
-        .and(path("/v1/owner/auth/poll"))
-        .and(body_partial_json(
-            serde_json::json!({"device_code": "dev_123"}),
-        ))
+        .and(path("/v1/owner-auth/poll/dev_123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "token_mock_123",
             "error": null
@@ -61,19 +61,38 @@ async fn test_wallet_hybrid_import() {
         .and(path("/v1/wallets/import-sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_999",
-            "vault_signer_url": "https://vault.kitepass.ai",
-            "vault_signer_pubkey": vault_pubkey_hex,
-            "vault_nonce": vault_nonce_hex,
-            "attestation_doc": "fake-doc",
+            "status": "awaiting_upload",
+            "vault_signer_instance_id": "vs_dev_1",
+            "vault_signer_attestation_endpoint": format!("{}/attest/import/sess_999", mock_server.uri()),
+            "channel_binding": {
+                "owner_id": "own_dev",
+                "owner_session_id": "oas_dev",
+                "request_id": "req_dev"
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/attest/import/sess_999"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "session_id": "sess_999",
+            "vault_signer_instance_id": "vs_dev_1",
+            "attestation_bundle": "fake-doc",
+            "import_public_key": vault_pubkey_hex,
+            "import_nonce": vault_nonce_hex,
+            "endpoint_binding": "binding_dev"
         })))
         .mount(&mock_server)
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/v1/wallets/import"))
+        .and(path("/v1/wallets/import-sessions/sess_999/upload"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "wallet_id": "wal_123",
+            "operation_id": "op_123",
+            "session_id": "sess_999",
             "status": "imported",
+            "wallet_id": "wal_123"
         })))
         .mount(&mock_server)
         .await;
@@ -81,13 +100,22 @@ async fn test_wallet_hybrid_import() {
     let client = PassportClient::new(mock_server.uri()).with_token("valid_token".to_string());
 
     let session_res = client
-        .create_import_session("base", Some("test-wallet".to_string()))
+        .create_import_session(
+            "base",
+            Some("test-wallet".to_string()),
+            "idem_123".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let attestation = client
+        .fetch_import_attestation(&session_res.vault_signer_attestation_endpoint)
         .await
         .unwrap();
 
     // Simulate CLI encryption step
-    let parsed_vault_pk = parse_public_key(&session_res.vault_signer_pubkey).unwrap();
-    let parsed_vault_nonce = parse_public_key(&session_res.vault_nonce).unwrap();
+    let parsed_vault_pk = parse_public_key(&attestation.import_public_key).unwrap();
+    let parsed_vault_nonce = parse_public_key(&attestation.import_nonce).unwrap();
 
     let ephemeral_key = EphemeralKey::generate();
     let shared_secret = ephemeral_key.diffie_hellman(&parsed_vault_pk);
@@ -100,14 +128,308 @@ async fn test_wallet_hybrid_import() {
     )
     .unwrap();
 
-    let mut payload = Vec::new();
-    payload.extend_from_slice(ephemeral_key.public_key().as_bytes());
-    payload.extend(ciphertext);
+    let nonce = &ciphertext[..12];
+    let cipher_and_tag = &ciphertext[12..];
+    let split_at = cipher_and_tag.len() - 16;
+    let cipher_bytes = &cipher_and_tag[..split_at];
+    let tag_bytes = &cipher_and_tag[split_at..];
 
-    // Provide to `/import`
     let import_res = client
-        .upload_wallet_ciphertext(&session_res.session_id, &hex::encode(payload))
+        .upload_wallet_ciphertext(
+            &session_res.session_id,
+            &UploadWalletCiphertextRequest {
+                vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
+                owner_ephemeral_pubkey: hex::encode(ephemeral_key.public_key().as_bytes()),
+                ciphertext: hex::encode(cipher_bytes),
+                nonce: hex::encode(nonce),
+                tag: hex::encode(tag_bytes),
+                aad: ImportAad {
+                    owner_id: session_res.channel_binding.owner_id.clone(),
+                    owner_session_id: session_res.channel_binding.owner_session_id.clone(),
+                    request_id: session_res.channel_binding.request_id.clone(),
+                    vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
+                },
+            },
+        )
         .await
         .unwrap();
-    assert_eq!(import_res.wallet_id, "wal_123");
+    assert_eq!(import_res.wallet_id.as_deref(), Some("wal_123"));
+}
+
+#[tokio::test]
+async fn test_owner_query_surfaces() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/wallets"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "wallets": [{
+                "wallet_id": "wal_123",
+                "owner_id": "own_dev",
+                "chain_family": "evm",
+                "status": "active",
+                "key_blob_ref": "vault://wallets/wal_123",
+                "key_version": 1,
+                "created_at": "2026-03-29T00:00:00Z",
+                "updated_at": "2026-03-29T00:00:00Z"
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/agent-access-keys"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_keys": [{
+                "access_key_id": "aak_123",
+                "owner_id": "own_dev",
+                "public_key": "abcd",
+                "key_alg": "ed25519",
+                "key_address": "ed25519:abcd",
+                "status": "active",
+                "expires_at": "2027-03-29T00:00:00Z",
+                "created_at": "2026-03-29T00:00:00Z",
+                "updated_at": "2026-03-29T00:00:00Z"
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/agent-access-keys/aak_123/bindings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "bindings": [{
+                "binding_id": "bind_123",
+                "access_key_id": "aak_123",
+                "wallet_id": "wal_123",
+                "policy_id": "pol_123",
+                "policy_version": 1,
+                "status": "active",
+                "is_default": true,
+                "selection_priority": 0
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/agent-access-keys/aak_123/usage"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "usage": {
+                "binding_id": "bind_123",
+                "policy_id": "pol_123",
+                "policy_version": 1,
+                "wallet_id": "wal_123",
+                "access_key_id": "aak_123",
+                "lifetime_spent": "10",
+                "daily_window_started_at": "2026-03-29T00:00:00Z",
+                "daily_spent": "5",
+                "rolling_window_started_at": "2026-03-29T00:00:00Z",
+                "rolling_spent": "5",
+                "last_consumed_request_id": "req_123",
+                "updated_at": "2026-03-29T00:00:00Z"
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/policies"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "policies": [{
+                "policy_id": "pol_123",
+                "binding_id": "bind_123",
+                "wallet_id": "wal_123",
+                "access_key_id": "aak_123",
+                "allowed_chains": ["eip155:8453"],
+                "allowed_actions": ["transaction"],
+                "max_single_amount": "100",
+                "max_daily_amount": "500",
+                "allowed_destinations": ["0xabc"],
+                "valid_from": "2026-03-29T00:00:00Z",
+                "valid_until": "2027-03-29T00:00:00Z",
+                "state": "active",
+                "version": 1
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/audit-events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "events": [{
+                "event_id": "evt_123",
+                "action": "signing_succeeded",
+                "trace_id": "trace_123",
+                "request_id": "req_123",
+                "wallet_id": "wal_123",
+                "access_key_id": "aak_123",
+                "chain_id": "eip155:8453",
+                "payload_hash": "0xdeadbeef",
+                "outcome": "success",
+                "policy_id": "pol_123",
+                "policy_version": 1,
+                "permit_id": "permit_123",
+                "enclave_receipt": "receipt_123",
+                "previous_event_hash": "root",
+                "timestamp": "2026-03-29T00:00:00Z"
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/audit-events/verify"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "valid": true,
+            "event_count": 1,
+            "latest_event_id": "evt_123"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/operations/op_123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "operation_id": "op_123",
+            "operation_type": "wallet_import",
+            "request_id": "req_123",
+            "status": "completed",
+            "resource_type": "wallet",
+            "resource_id": "wal_123",
+            "error_code": null,
+            "created_at": "2026-03-29T00:00:00Z",
+            "updated_at": "2026-03-29T00:00:00Z",
+            "poll_after_ms": null
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let client = PassportClient::new(mock_server.uri()).with_token("valid_token".to_string());
+
+    let wallets = client.list_wallets().await.unwrap();
+    assert_eq!(wallets.len(), 1);
+    assert_eq!(wallets[0].wallet_id, "wal_123");
+
+    let access_keys = client.list_access_keys().await.unwrap();
+    assert_eq!(access_keys.len(), 1);
+    assert_eq!(access_keys[0].access_key_id, "aak_123");
+
+    let bindings = client.list_bindings("aak_123").await.unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].policy_id, "pol_123");
+
+    let usage = client
+        .get_access_key_usage("aak_123")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(usage.daily_spent, "5");
+
+    let policies = client.list_policies().await.unwrap();
+    assert_eq!(policies.len(), 1);
+    assert_eq!(policies[0].policy_id, "pol_123");
+
+    let events = client.list_audit_events(None).await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_id, "evt_123");
+
+    let verify = client.verify_audit_chain().await.unwrap();
+    assert!(verify.valid);
+
+    let operation = client.get_operation("op_123").await.unwrap();
+    assert_eq!(operation.status, "completed");
+}
+
+#[tokio::test]
+async fn test_agent_signing_surfaces() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/sessions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "session_id": "sess_123",
+            "access_key_id": "aak_123",
+            "session_nonce": "nonce_123",
+            "status": "active",
+            "expires_at": "2026-03-29T00:05:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/sign-intents/validate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "request_id": "req_123",
+            "valid": true,
+            "resolved_wallet_id": "wal_123",
+            "policy_id": "pol_123",
+            "policy_version": 1,
+            "normalized": {
+                "wallet_id": "wal_123",
+                "chain_id": "eip155:8453",
+                "payload_hash": "0xdeadbeef",
+                "destination": "0xabc",
+                "value": "10"
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/signatures"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "request_id": "req_123",
+            "status": "succeeded",
+            "signature": "0xwalletsig",
+            "enclave_receipt": "0xreceipt",
+            "operation_id": null,
+            "poll_after_ms": null
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let client = PassportClient::new(mock_server.uri());
+    let session = client.create_session("aak_123").await.unwrap();
+    assert_eq!(session.session_nonce, "nonce_123");
+
+    let validate = client
+        .validate_sign_intent(&ValidateSignIntentRequest {
+            request_id: "req_123".to_string(),
+            wallet_id: None,
+            wallet_selector: Some("auto".to_string()),
+            access_key_id: "aak_123".to_string(),
+            chain_id: "eip155:8453".to_string(),
+            signing_type: "transaction".to_string(),
+            payload: "0xdeadbeef".to_string(),
+            destination: "0xabc".to_string(),
+            value: "10".to_string(),
+        })
+        .await
+        .unwrap();
+    assert!(validate.valid);
+    assert_eq!(validate.resolved_wallet_id, "wal_123");
+
+    let sign = client
+        .submit_signature(&SignRequest {
+            request_id: "req_123".to_string(),
+            idempotency_key: "idem_123".to_string(),
+            wallet_id: "wal_123".to_string(),
+            access_key_id: "aak_123".to_string(),
+            chain_id: "eip155:8453".to_string(),
+            signing_type: "transaction".to_string(),
+            mode: SigningMode::SignatureOnly,
+            payload: "0xdeadbeef".to_string(),
+            destination: "0xabc".to_string(),
+            value: "10".to_string(),
+            agent_proof: AgentProof {
+                access_key_id: "aak_123".to_string(),
+                session_nonce: "nonce_123".to_string(),
+                signature: "0xagentsig".to_string(),
+            },
+        })
+        .await
+        .unwrap();
+    assert_eq!(sign.signature.as_deref(), Some("0xwalletsig"));
 }

@@ -1,10 +1,15 @@
-use ed25519_dalek::{SigningKey, VerifyingKey, pkcs8::EncodePrivateKey};
+use ed25519_dalek::{
+    Signature, Signer, SigningKey, VerifyingKey,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey},
+};
 use rand::rngs::OsRng;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentKeyError {
     #[error("Key serialization error: {0}")]
     SerializationError(String),
+    #[error("Key parse error: {0}")]
+    ParseError(String),
 }
 
 /// Represents an Ed25519 Agent Access Key.
@@ -30,6 +35,13 @@ impl AgentKey {
         hex::encode(self.public_key().as_bytes())
     }
 
+    /// Loads an agent key from PKCS#8 PEM.
+    pub fn from_pem(pem: &str) -> Result<Self, AgentKeyError> {
+        let signing_key = SigningKey::from_pkcs8_pem(pem)
+            .map_err(|e| AgentKeyError::ParseError(e.to_string()))?;
+        Ok(Self { signing_key })
+    }
+
     /// Exports the private key in PKCS#8 PEM format.
     /// The private key should be zeroized after use.
     pub fn export_pem(&self) -> Result<String, AgentKeyError> {
@@ -38,6 +50,11 @@ impl AgentKey {
             .to_pkcs8_pem(Default::default())
             .map_err(|e| AgentKeyError::SerializationError(e.to_string()))?;
         Ok(doc.to_string())
+    }
+
+    /// Signs the provided message bytes and returns the raw signature bytes.
+    pub fn sign_bytes(&self, message: &[u8]) -> Signature {
+        self.signing_key.sign(message)
     }
 }
 
@@ -59,5 +76,14 @@ mod tests {
 
         let pem = key.export_pem().unwrap();
         assert!(pem.contains("BEGIN PRIVATE KEY"));
+    }
+
+    #[test]
+    fn test_roundtrip_from_pem_and_sign() {
+        let key = AgentKey::generate();
+        let pem = key.export_pem().unwrap();
+        let loaded = AgentKey::from_pem(&pem).unwrap();
+        let sig = loaded.sign_bytes(b"hello");
+        assert_eq!(sig.to_bytes().len(), 64);
     }
 }
