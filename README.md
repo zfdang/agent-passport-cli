@@ -5,7 +5,14 @@ Command-line interface for **Kite Agent Passport**.
 ## Installation
 
 ```bash
-curl -fsSL https://releases.kitepass.ai/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zfdang/kite-agent-passport-cli/main/scripts/install.sh | sh
+```
+
+Install a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zfdang/kite-agent-passport-cli/main/scripts/install.sh | \
+  KITEPASS_VERSION=v0.1.0 sh
 ```
 
 ## Usage
