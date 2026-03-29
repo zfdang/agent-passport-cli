@@ -1,0 +1,13 @@
+[package]
+name = "kitepass-crypto"
+description = "Client-side cryptography for Kitepass CLI — ECDH, envelope encryption, Ed25519 key generation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+aes-gcm.workspace = true
+zeroize.workspace = true
+thiserror.workspace = true

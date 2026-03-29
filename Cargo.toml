@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/kitepass-cli",
+    "crates/kitepass-api-client",
+    "crates/kitepass-crypto",
+    "crates/kitepass-config",
+    "crates/kitepass-output",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/AstroBlock/kitepass-cli"
+
+[workspace.dependencies]
+# ── workspace crates ─────────────────────────────────────
+kitepass-api-client = { path = "crates/kitepass-api-client" }
+kitepass-crypto     = { path = "crates/kitepass-crypto" }
+kitepass-config     = { path = "crates/kitepass-config" }
+kitepass-output     = { path = "crates/kitepass-output" }
+
+# ── external ─────────────────────────────────────────────
+clap        = { version = "4", features = ["derive"] }
+tokio       = { version = "1", features = ["full"] }
+reqwest     = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+tracing     = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid        = { version = "1", features = ["v4", "serde"] }
+chrono      = { version = "0.4", features = ["serde"] }
+thiserror   = "2"
+anyhow      = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+aes-gcm     = "0.10"
+zeroize     = { version = "1", features = ["derive"] }
+dirs        = "6"
+toml        = "0.8"
+tabled      = "0.17"
