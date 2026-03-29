@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::WalletAction;
+use anyhow::Result;
 
 pub async fn run(action: WalletAction) -> Result<()> {
     match action {

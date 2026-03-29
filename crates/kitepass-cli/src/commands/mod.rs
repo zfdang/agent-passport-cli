@@ -1,13 +1,13 @@
-pub mod login;
-pub mod wallet;
 pub mod access_key;
+pub mod audit;
+pub mod login;
+pub mod operations;
 pub mod policy;
 pub mod sign;
-pub mod audit;
-pub mod operations;
+pub mod wallet;
 
-use anyhow::Result;
 use crate::cli::{Cli, Command};
+use anyhow::Result;
 
 pub async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {

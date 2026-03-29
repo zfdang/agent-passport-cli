@@ -2,7 +2,6 @@
 ///
 /// Implements typed request/response wrappers for all CLI-relevant endpoints.
 /// Targets the published OpenAPI specification.
-
 pub struct PassportClient {
     base_url: String,
     http: reqwest::Client,
@@ -21,5 +20,17 @@ impl PassportClient {
     pub fn with_token(mut self, token: String) -> Self {
         self.token = Some(token);
         self
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
     }
 }

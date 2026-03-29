@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::OperationsAction;
+use anyhow::Result;
 
 pub async fn run(action: OperationsAction) -> Result<()> {
     match action {

@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::PolicyAction;
+use anyhow::Result;
 
 pub async fn run(action: PolicyAction) -> Result<()> {
     match action {

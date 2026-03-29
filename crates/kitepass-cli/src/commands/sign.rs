@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::SignAction;
+use anyhow::Result;
 
 pub async fn run(action: SignAction) -> Result<()> {
     match action {

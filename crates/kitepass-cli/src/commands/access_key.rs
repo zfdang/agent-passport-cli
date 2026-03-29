@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::AccessKeyAction;
+use anyhow::Result;
 
 pub async fn run(action: AccessKeyAction) -> Result<()> {
     match action {

@@ -12,7 +12,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/AstroBlock/kitepass-cli"
+repository = "https://github.com/zfdang/kite-agent-passport-cli"
 
 [workspace.dependencies]
 # ── workspace crates ─────────────────────────────────────

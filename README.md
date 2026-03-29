@@ -34,3 +34,7 @@ cargo build
 cargo test
 cargo run -- --help
 ```
+
+## Related Repositories
+
+- [`kite-agent-passport`](https://github.com/zfdang/kite-agent-passport) — main platform repository
