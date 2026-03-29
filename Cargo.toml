@@ -33,7 +33,7 @@ uuid        = { version = "1", features = ["v4", "serde"] }
 chrono      = { version = "0.4", features = ["serde"] }
 thiserror   = "2"
 anyhow      = "1"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm     = "0.10"
 zeroize     = { version = "1", features = ["derive"] }
