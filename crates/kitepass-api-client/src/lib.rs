@@ -103,6 +103,47 @@ pub struct RegisterAccessKeyRequest {
     pub idempotency_key: String,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct PrepareAccessKeyResponse {
+    pub intent_id: String,
+    pub intent_hash: String,
+    pub approval_url: String,
+    pub approval_status: String,
+    pub approval_expires_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ProvisioningIntentStatusResponse {
+    pub intent_id: String,
+    pub intent_hash: String,
+    pub approval_status: String,
+    pub owner_approval_id: Option<String>,
+    pub owner_approval_expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct FinalizeAccessKeyRequest {
+    pub intent_id: String,
+    pub owner_approval_id: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct OwnerApprovalRecord {
+    pub owner_approval_id: String,
+    pub record_type: String,
+    pub record_version: u32,
+    pub owner_id: String,
+    pub intent_id: String,
+    pub intent_hash: String,
+    pub operation: String,
+    pub approval_method: String,
+    pub approved_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub approver_key_ref: String,
+    pub owner_approval_signature: String,
+}
+
 #[derive(Serialize, Debug)]
 pub struct BindingInput {
     pub wallet_id: String,
@@ -121,10 +162,26 @@ pub struct CreateBindingRequest {
     pub selection_priority: u32,
 }
 
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+enum WalletMutationRequest {
+    Freeze,
+    Revoke,
+}
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+enum AccessKeyMutationRequest {
+    Freeze,
+    Revoke,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct RegisterAccessKeyResponse {
     pub access_key_id: String,
     pub status: String,
+    pub owner_approval_status: Option<String>,
+    pub bindings: Vec<BindingResult>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -472,6 +529,39 @@ impl PassportClient {
     pub async fn register_access_key(
         &self,
         req_body: &RegisterAccessKeyRequest,
+    ) -> Result<PrepareAccessKeyResponse, ApiError> {
+        let url = format!("{}/v1/agent-access-keys:prepare", self.base_url);
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.json(req_body).send().await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn get_provisioning_intent(
+        &self,
+        intent_id: &str,
+    ) -> Result<ProvisioningIntentStatusResponse, ApiError> {
+        let url = format!("{}/v1/provisioning-intents/{}", self.base_url, intent_id);
+        let req = self.maybe_auth(self.http.get(&url));
+        let res = req.send().await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn approve_provisioning_intent(
+        &self,
+        intent_id: &str,
+    ) -> Result<OwnerApprovalRecord, ApiError> {
+        let url = format!(
+            "{}/v1/provisioning-intents/{}/approve",
+            self.base_url, intent_id
+        );
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.send().await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn finalize_access_key(
+        &self,
+        req_body: &FinalizeAccessKeyRequest,
     ) -> Result<RegisterAccessKeyResponse, ApiError> {
         let url = format!("{}/v1/agent-access-keys", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
@@ -508,16 +598,16 @@ impl PassportClient {
     }
 
     pub async fn freeze_wallet(&self, wallet_id: &str) -> Result<Wallet, ApiError> {
-        let url = format!("{}/v1/wallets/{}/freeze", self.base_url, wallet_id);
+        let url = format!("{}/v1/wallets/{}", self.base_url, wallet_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req.json(&WalletMutationRequest::Freeze).send().await?;
         Self::handle_res(res).await
     }
 
     pub async fn revoke_wallet(&self, wallet_id: &str) -> Result<Wallet, ApiError> {
-        let url = format!("{}/v1/wallets/{}/revoke", self.base_url, wallet_id);
+        let url = format!("{}/v1/wallets/{}", self.base_url, wallet_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req.json(&WalletMutationRequest::Revoke).send().await?;
         Self::handle_res(res).await
     }
 
@@ -538,22 +628,16 @@ impl PassportClient {
     }
 
     pub async fn freeze_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
-        let url = format!(
-            "{}/v1/agent-access-keys/{}/freeze",
-            self.base_url, access_key_id
-        );
+        let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req.json(&AccessKeyMutationRequest::Freeze).send().await?;
         Self::handle_res(res).await
     }
 
     pub async fn revoke_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
-        let url = format!(
-            "{}/v1/agent-access-keys/{}/revoke",
-            self.base_url, access_key_id
-        );
+        let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req.json(&AccessKeyMutationRequest::Revoke).send().await?;
         Self::handle_res(res).await
     }
 
@@ -604,17 +688,49 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn activate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}/activate", self.base_url, policy_id);
+    pub async fn update_policy(
+        &self,
+        policy_id: &str,
+        req_body: &CreatePolicyRequest,
+    ) -> Result<Policy, ApiError> {
+        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req
+            .json(&serde_json::json!({
+                "operation": "update",
+                "binding_id": req_body.binding_id,
+                "wallet_id": req_body.wallet_id,
+                "access_key_id": req_body.access_key_id,
+                "allowed_chains": req_body.allowed_chains,
+                "allowed_actions": req_body.allowed_actions,
+                "max_single_amount": req_body.max_single_amount,
+                "max_daily_amount": req_body.max_daily_amount,
+                "allowed_destinations": req_body.allowed_destinations,
+                "valid_from": req_body.valid_from,
+                "valid_until": req_body.valid_until,
+            }))
+            .send()
+            .await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn activate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
+        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req
+            .json(&serde_json::json!({ "operation": "activate" }))
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 
     pub async fn deactivate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}/deactivate", self.base_url, policy_id);
+        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.send().await?;
+        let res = req
+            .json(&serde_json::json!({ "operation": "deactivate" }))
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 

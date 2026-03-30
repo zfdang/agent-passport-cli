@@ -1,7 +1,9 @@
 use crate::cli::AccessKeyAction;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use kitepass_api_client::{CreateBindingRequest, PassportClient, RegisterAccessKeyRequest};
+use kitepass_api_client::{
+    BindingInput, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
+};
 use kitepass_config::{CliConfig, config_dir};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_output::print_json;
@@ -26,7 +28,11 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .context("Failed to list access keys")?;
             print_json(&access_keys).context("Failed to render access keys")?;
         }
-        AccessKeyAction::Create { name } => {
+        AccessKeyAction::Create {
+            name,
+            wallet_id,
+            policy_id,
+        } => {
             if let Some(name) = name.as_deref() {
                 println!("Generating new Ed25519 Agent Access Key for {name}...");
             } else {
@@ -77,17 +83,51 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
 
             // 3. Register public key on Passport Gateway
             println!("Registering public key with Gateway: {}", pubkey_hex);
+            let bindings = match (wallet_id.clone(), policy_id.clone()) {
+                (Some(wallet_id), Some(policy_id)) => {
+                    let policy = client
+                        .get_policy(&policy_id)
+                        .await
+                        .with_context(|| format!("Failed to get policy {policy_id}"))?;
+                    vec![BindingInput {
+                        wallet_id,
+                        policy_id,
+                        policy_version: policy.version,
+                        is_default: true,
+                        selection_priority: 0,
+                    }]
+                }
+                (None, None) => Vec::new(),
+                _ => {
+                    anyhow::bail!(
+                        "`--wallet-id` and `--policy-id` must be provided together when provisioning an active delegated authority"
+                    );
+                }
+            };
             let request = RegisterAccessKeyRequest {
                 public_key: pubkey_hex.clone(),
                 key_address: format!("ed25519:{}", &pubkey_hex[..16]),
                 expires_at: (Utc::now() + Duration::days(365)).to_rfc3339(),
-                bindings: Vec::new(),
+                bindings,
                 idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
             };
-            let res = client
+            let prepared = client
                 .register_access_key(&request)
                 .await
-                .context("Failed to register access key")?;
+                .context("Failed to prepare access key provisioning")?;
+            println!("Prepared provisioning intent: {}", prepared.intent_id);
+            let approval = client
+                .approve_provisioning_intent(&prepared.intent_id)
+                .await
+                .context("Failed to approve provisioning intent")?;
+            let res = client
+                .finalize_access_key(&FinalizeAccessKeyRequest {
+                    intent_id: prepared.intent_id.clone(),
+                    owner_approval_id: approval.owner_approval_id.clone(),
+                    idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
+                })
+                .await
+                .context("Failed to finalize access key provisioning")?;
 
             println!(
                 "Agent Access Key registered successfully. Key ID: {}",
@@ -119,25 +159,10 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
             wallet_id,
             policy_id,
         } => {
-            let policy_id = policy_id.context("`--policy-id` is required for bind")?;
-            let policy = client
-                .get_policy(&policy_id)
-                .await
-                .with_context(|| format!("Failed to get policy {policy_id}"))?;
-            let binding = client
-                .create_binding(
-                    &key_id,
-                    &CreateBindingRequest {
-                        wallet_id,
-                        policy_id,
-                        policy_version: policy.version,
-                        is_default: true,
-                        selection_priority: 0,
-                    },
-                )
-                .await
-                .with_context(|| format!("Failed to bind access key {key_id}"))?;
-            print_json(&binding).context("Failed to render binding result")?;
+            let _ = (key_id, wallet_id, policy_id);
+            anyhow::bail!(
+                "Direct binding expansion is disabled. Create a new access key with `--wallet-id` and `--policy-id` so the delegated authority can go through owner-approved provisioning."
+            );
         }
         AccessKeyAction::Freeze { key_id } => {
             let access_key = client

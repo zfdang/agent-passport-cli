@@ -11,7 +11,7 @@ pub async fn run() -> Result<()> {
 
     let client = PassportClient::new(api_url);
 
-    println!("Starting OAuth Device Code login...");
+    println!("Starting CLI device login...");
     let device_res = client
         .request_device_code()
         .await
@@ -20,6 +20,7 @@ pub async fn run() -> Result<()> {
     println!("\n=============================================");
     println!("Please go to: {}", device_res.verification_uri);
     println!("And enter the code: {}", device_res.user_code);
+    println!("Sign in on the website first with passkey, then approve this CLI device.");
     println!("=============================================\n");
     println!("Waiting for authorization...");
 

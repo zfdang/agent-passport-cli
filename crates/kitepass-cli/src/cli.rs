@@ -89,6 +89,10 @@ pub enum AccessKeyAction {
     Create {
         #[arg(long)]
         name: Option<String>,
+        #[arg(long)]
+        wallet_id: Option<String>,
+        #[arg(long)]
+        policy_id: Option<String>,
     },
     /// Get access key details
     Get {
