@@ -1,9 +1,8 @@
 use kitepass_api_client::{
-    AgentProof, ImportAad, PassportClient, SignRequest, SigningMode, UploadWalletCiphertextRequest,
-    ValidateSignIntentRequest,
+    AgentProof, AuthPollRequest, DeviceCodeRequest, ImportAad, PassportClient, SignRequest,
+    SigningMode, UploadWalletCiphertextRequest, ValidateSignIntentRequest,
 };
-use kitepass_crypto::ecdh::{EphemeralKey, parse_public_key};
-use kitepass_crypto::envelope::Envelope;
+use kitepass_crypto::hpke::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair, seal_to_hex};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -36,11 +35,14 @@ async fn test_login_device_flow() {
 
     let client = PassportClient::new(mock_server.uri());
 
-    let device_res = client.request_device_code().await.unwrap();
+    let device_res = client
+        .request_device_code(&DeviceCodeRequest::default())
+        .await
+        .unwrap();
     assert_eq!(device_res.user_code, "USER-CODE");
 
     let poll_res = client
-        .poll_device_code(&device_res.device_code)
+        .poll_device_code(&device_res.device_code, &AuthPollRequest::default())
         .await
         .unwrap();
     assert_eq!(poll_res.access_token.unwrap(), "token_mock_123");
@@ -50,12 +52,7 @@ async fn test_login_device_flow() {
 async fn test_wallet_hybrid_import() {
     let mock_server = MockServer::start().await;
 
-    let vault_secret = EphemeralKey::generate();
-    let vault_pubkey = vault_secret.public_key();
-    let vault_pubkey_hex = hex::encode(vault_pubkey.as_bytes());
-
-    let vault_nonce = [4u8; 32];
-    let vault_nonce_hex = hex::encode(vault_nonce);
+    let vault_keypair = generate_recipient_keypair();
 
     Mock::given(method("POST"))
         .and(path("/v1/wallets/import-sessions"))
@@ -64,11 +61,33 @@ async fn test_wallet_hybrid_import() {
             "status": "awaiting_upload",
             "vault_signer_instance_id": "vs_dev_1",
             "vault_signer_attestation_endpoint": format!("{}/attest/import/sess_999", mock_server.uri()),
+            "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
+            "vault_signer_identity": {
+                "instance_id": "vs_dev_1",
+                "tee_type": "aws_nitro_enclaves_dev",
+                "expected_measurements": {
+                    "pcr0": "dev-pcr0",
+                    "pcr1": "dev-pcr1",
+                    "pcr2": "dev-pcr2"
+                },
+                "measurement_profile": {
+                    "profile_id": "aws-nitro-dev-v1",
+                    "version": 1
+                },
+                "reviewed_build": {
+                    "build_id": "vault-signer-dev-reviewed-build-v1",
+                    "build_digest": "sha256:dev-reviewed-build-v1",
+                    "build_source": "apps/vault-signer",
+                    "security_model_ref": "docs/public-security-model.md#attestation-auditability"
+                },
+                "authorization_model": "dual_sign_authorization_tee_signer"
+            },
             "channel_binding": {
                 "owner_id": "own_dev",
                 "owner_session_id": "oas_dev",
                 "request_id": "req_dev"
-            }
+            },
+            "expires_at": "2026-03-31T00:10:00Z"
         })))
         .mount(&mock_server)
         .await;
@@ -78,9 +97,28 @@ async fn test_wallet_hybrid_import() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_999",
             "vault_signer_instance_id": "vs_dev_1",
-            "attestation_bundle": "fake-doc",
-            "import_public_key": vault_pubkey_hex,
-            "import_nonce": vault_nonce_hex,
+            "attestation_bundle": serde_json::json!({
+                "instance_id": "vs_dev_1",
+                "pcr0": "dev-pcr0",
+                "pcr1": "dev-pcr1",
+                "pcr2": "dev-pcr2",
+                "endpoint_binding": "binding_dev",
+                "user_data": {
+                    "document_version": 1,
+                    "import_session_id": "sess_999",
+                    "public_api_scope": "wallet_import_attestation",
+                    "authorization_model": "dual_sign_authorization_tee_signer",
+                    "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
+                    "measurement_profile_id": "aws-nitro-dev-v1",
+                    "measurement_profile_version": 1,
+                    "reviewed_build_id": "vault-signer-dev-reviewed-build-v1",
+                    "reviewed_build_digest": "sha256:dev-reviewed-build-v1",
+                    "build_source": "apps/vault-signer",
+                    "security_model_ref": "docs/public-security-model.md#attestation-auditability"
+                }
+            }).to_string(),
+            "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
+            "import_public_key": vault_keypair.public_key_hex,
             "endpoint_binding": "binding_dev"
         })))
         .mount(&mock_server)
@@ -113,42 +151,45 @@ async fn test_wallet_hybrid_import() {
         .await
         .unwrap();
 
-    // Simulate CLI encryption step
-    let parsed_vault_pk = parse_public_key(&attestation.import_public_key).unwrap();
-    let parsed_vault_nonce = parse_public_key(&attestation.import_nonce).unwrap();
-
-    let ephemeral_key = EphemeralKey::generate();
-    let shared_secret = ephemeral_key.diffie_hellman(&parsed_vault_pk);
-
-    let ciphertext = Envelope::encrypt(
-        &shared_secret,
-        &parsed_vault_pk,
-        &parsed_vault_nonce,
+    let aad = ImportAad {
+        owner_id: session_res.channel_binding.owner_id.clone(),
+        owner_session_id: session_res.channel_binding.owner_session_id.clone(),
+        request_id: session_res.channel_binding.request_id.clone(),
+        vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
+    };
+    let info = serde_json::to_vec(&serde_json::json!({
+        "document_version": 1,
+        "import_session_id": session_res.session_id,
+        "vault_signer_instance_id": session_res.vault_signer_instance_id,
+        "endpoint_binding": attestation.endpoint_binding,
+        "public_api_scope": "wallet_import_attestation",
+        "authorization_model": "dual_sign_authorization_tee_signer",
+        "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
+        "measurement_profile_id": "aws-nitro-dev-v1",
+        "measurement_profile_version": 1,
+        "reviewed_build_id": "vault-signer-dev-reviewed-build-v1",
+        "reviewed_build_digest": "sha256:dev-reviewed-build-v1",
+        "build_source": "apps/vault-signer",
+        "security_model_ref": "docs/public-security-model.md#attestation-auditability"
+    }))
+    .unwrap();
+    let aad_bytes = serde_json::to_vec(&aad).unwrap();
+    let sealed = seal_to_hex(
+        &attestation.import_public_key,
+        &info,
+        &aad_bytes,
         b"my_secret_mnemonic",
     )
     .unwrap();
-
-    let nonce = &ciphertext[..12];
-    let cipher_and_tag = &ciphertext[12..];
-    let split_at = cipher_and_tag.len() - 16;
-    let cipher_bytes = &cipher_and_tag[..split_at];
-    let tag_bytes = &cipher_and_tag[split_at..];
 
     let import_res = client
         .upload_wallet_ciphertext(
             &session_res.session_id,
             &UploadWalletCiphertextRequest {
                 vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
-                owner_ephemeral_pubkey: hex::encode(ephemeral_key.public_key().as_bytes()),
-                ciphertext: hex::encode(cipher_bytes),
-                nonce: hex::encode(nonce),
-                tag: hex::encode(tag_bytes),
-                aad: ImportAad {
-                    owner_id: session_res.channel_binding.owner_id.clone(),
-                    owner_session_id: session_res.channel_binding.owner_session_id.clone(),
-                    request_id: session_res.channel_binding.request_id.clone(),
-                    vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
-                },
+                encapsulated_key: sealed.encapsulated_key_hex,
+                ciphertext: sealed.ciphertext_hex,
+                aad,
             },
         )
         .await

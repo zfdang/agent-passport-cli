@@ -29,6 +29,20 @@ pub struct DeviceCodeResponse {
     pub interval: i32,
 }
 
+#[derive(Deserialize, Serialize, Debug, Default)]
+pub struct DeviceCodeRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_challenge: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_challenge_method: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default)]
+pub struct AuthPollRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_verifier: Option<String>,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AuthPollResponse {
     pub access_token: Option<String>,
@@ -48,7 +62,10 @@ pub struct ImportSessionResponse {
     pub status: String,
     pub vault_signer_instance_id: String,
     pub vault_signer_attestation_endpoint: String,
+    pub import_encryption_scheme: String,
+    pub vault_signer_identity: VaultSignerIdentity,
     pub channel_binding: ChannelBinding,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -62,19 +79,48 @@ pub struct ChannelBinding {
 pub struct ImportAttestationResponse {
     pub session_id: String,
     pub vault_signer_instance_id: String,
+    pub import_encryption_scheme: String,
     pub attestation_bundle: String,
     pub import_public_key: String,
-    pub import_nonce: String,
     pub endpoint_binding: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct VaultSignerIdentity {
+    pub instance_id: String,
+    pub tee_type: String,
+    pub expected_measurements: ExpectedMeasurements,
+    pub measurement_profile: MeasurementProfile,
+    pub reviewed_build: ReviewedBuild,
+    pub authorization_model: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct ExpectedMeasurements {
+    pub pcr0: String,
+    pub pcr1: String,
+    pub pcr2: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct MeasurementProfile {
+    pub profile_id: String,
+    pub version: u32,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ReviewedBuild {
+    pub build_id: String,
+    pub build_digest: String,
+    pub build_source: String,
+    pub security_model_ref: String,
 }
 
 #[derive(Serialize, Debug)]
 pub struct UploadWalletCiphertextRequest {
     pub vault_signer_instance_id: String,
-    pub owner_ephemeral_pubkey: String,
+    pub encapsulated_key: String,
     pub ciphertext: String,
-    pub nonce: String,
-    pub tag: String,
     pub aad: ImportAad,
 }
 
@@ -479,15 +525,22 @@ impl PassportClient {
         }
     }
 
-    pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, ApiError> {
+    pub async fn request_device_code(
+        &self,
+        req_body: &DeviceCodeRequest,
+    ) -> Result<DeviceCodeResponse, ApiError> {
         let url = format!("{}/v1/owner-auth/device-code", self.base_url);
-        let res = self.http.post(&url).send().await?;
+        let res = self.http.post(&url).json(req_body).send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn poll_device_code(&self, device_code: &str) -> Result<AuthPollResponse, ApiError> {
+    pub async fn poll_device_code(
+        &self,
+        device_code: &str,
+        req_body: &AuthPollRequest,
+    ) -> Result<AuthPollResponse, ApiError> {
         let url = format!("{}/v1/owner-auth/poll/{}", self.base_url, device_code);
-        let res = self.http.post(&url).send().await?;
+        let res = self.http.post(&url).json(req_body).send().await?;
         Self::handle_res(res).await
     }
 

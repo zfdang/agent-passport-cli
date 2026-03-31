@@ -36,6 +36,8 @@ anyhow      = "1"
 ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm     = "0.10"
+hpke        = { version = "0.13", features = ["x25519"] }
+rand_core   = { version = "0.9", features = ["os_rng"] }
 zeroize     = { version = "1", features = ["derive"] }
 dirs        = "6"
 toml        = "0.8"

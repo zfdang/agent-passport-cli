@@ -1,11 +1,12 @@
 use crate::cli::SignAction;
+use crate::runtime::Runtime;
 use anyhow::{Context, Result};
 use kitepass_api_client::{
     AgentProof, PassportClient, SignRequest, SigningMode, ValidateSignIntentRequest,
 };
 use kitepass_config::CliConfig;
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_output::print_json;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
 use uuid::Uuid;
@@ -44,7 +45,7 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Vec<u8> {
     .expect("canonical sign intent should serialize")
 }
 
-pub async fn run(action: SignAction) -> Result<()> {
+pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
     let api_url = config.resolved_api_url();
     let client = PassportClient::new(api_url);
@@ -79,7 +80,7 @@ pub async fn run(action: SignAction) -> Result<()> {
                 })
                 .await
                 .context("Failed to validate sign intent")?;
-            print_json(&result).context("Failed to render validate response")?;
+            runtime.print_data(&result)?;
         }
         SignAction::Submit {
             access_key_id,
@@ -93,6 +94,23 @@ pub async fn run(action: SignAction) -> Result<()> {
             key_path,
             sign_and_submit,
         } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "sign.submit",
+                    "access_key_id": access_key_id,
+                    "wallet_id": wallet_id,
+                    "wallet_selector": wallet_selector,
+                    "chain_id": chain_id,
+                    "signing_type": signing_type,
+                    "destination": destination,
+                    "value": value,
+                    "mode": if sign_and_submit { "sign_and_submit" } else { "signature_only" },
+                    "key_path": key_path,
+                }))?;
+                return Ok(());
+            }
+
             let request_id = format!("req_{}", Uuid::new_v4().simple());
             let idempotency_key = format!("idem_{}", Uuid::new_v4().simple());
             let wallet_selector = wallet_id
@@ -157,7 +175,7 @@ pub async fn run(action: SignAction) -> Result<()> {
                 })
                 .await
                 .context("Failed to submit sign request")?;
-            print_json(&response).context("Failed to render sign response")?;
+            runtime.print_data(&response)?;
         }
     }
     Ok(())

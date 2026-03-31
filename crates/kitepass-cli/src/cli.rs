@@ -1,14 +1,34 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "kitepass", about = "Kite Agent Passport CLI")]
 pub struct Cli {
+    /// Output format
+    #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
+
+    /// Emit structured JSON output
+    #[arg(long, global = true, default_value_t = false)]
+    pub json: bool,
+
+    /// Suppress progress logs
+    #[arg(long, global = true, default_value_t = false)]
+    pub quiet: bool,
+
+    /// Disable ANSI color output
+    #[arg(long, global = true, default_value_t = false)]
+    pub no_color: bool,
+
+    /// Disable browser launches and interactive prompts
+    #[arg(long, global = true, default_value_t = false)]
+    pub non_interactive: bool,
+
+    /// Preview mutating actions without applying them
+    #[arg(long, global = true, default_value_t = false)]
+    pub dry_run: bool,
+
     #[command(subcommand)]
     pub command: Command,
-
-    /// Output format
-    #[arg(long, global = true, default_value = "text")]
-    pub format: OutputFormat,
 }
 
 #[derive(Subcommand)]
@@ -233,19 +253,45 @@ pub enum OperationsAction {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, ValueEnum)]
 pub enum OutputFormat {
+    #[default]
     Text,
     Json,
 }
 
-impl std::str::FromStr for OutputFormat {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "text" => Ok(Self::Text),
-            "json" => Ok(Self::Json),
-            _ => Err(format!("unknown format: {s}")),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parses_required_global_flags() {
+        let cli = Cli::try_parse_from([
+            "kitepass",
+            "--json",
+            "--quiet",
+            "--no-color",
+            "--non-interactive",
+            "--dry-run",
+            "wallet",
+            "list",
+        ])
+        .expect("cli should parse");
+
+        assert!(cli.json);
+        assert!(cli.quiet);
+        assert!(cli.no_color);
+        assert!(cli.non_interactive);
+        assert!(cli.dry_run);
+        assert_eq!(cli.format, OutputFormat::Text);
+    }
+
+    #[test]
+    fn parses_format_value_enum() {
+        let cli = Cli::try_parse_from(["kitepass", "--format", "json", "audit", "verify"])
+            .expect("cli should parse");
+
+        assert_eq!(cli.format, OutputFormat::Json);
     }
 }

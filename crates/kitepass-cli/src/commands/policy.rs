@@ -1,17 +1,17 @@
-use crate::cli::PolicyAction;
+use crate::{cli::PolicyAction, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use kitepass_api_client::{CreatePolicyRequest, PassportClient};
 use kitepass_config::CliConfig;
-use kitepass_output::print_json;
+use serde_json::json;
 
-pub async fn run(action: PolicyAction) -> Result<()> {
+pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
     let api_url = config.resolved_api_url();
     let token = config
         .access_token
         .clone()
-        .context("Please run `kitepass login` first")?;
+        .ok_or(CliError::AuthenticationRequired)?;
 
     let client = PassportClient::new(api_url).with_token(token);
 
@@ -21,7 +21,7 @@ pub async fn run(action: PolicyAction) -> Result<()> {
                 .list_policies()
                 .await
                 .context("Failed to list policies")?;
-            print_json(&policies).context("Failed to render policies")?;
+            runtime.print_data(&policies)?;
         }
         PolicyAction::Create {
             name,
@@ -34,6 +34,23 @@ pub async fn run(action: PolicyAction) -> Result<()> {
             allowed_destinations,
             valid_for_hours,
         } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "policy.create",
+                    "name": name,
+                    "wallet_id": wallet_id,
+                    "access_key_id": access_key_id,
+                    "allowed_chains": allowed_chains,
+                    "allowed_actions": allowed_actions,
+                    "max_single_amount": max_single_amount,
+                    "max_daily_amount": max_daily_amount,
+                    "allowed_destinations": allowed_destinations,
+                    "valid_for_hours": valid_for_hours,
+                }))?;
+                return Ok(());
+            }
+
             let _ = name;
             let now = Utc::now();
             let policy = client
@@ -51,28 +68,44 @@ pub async fn run(action: PolicyAction) -> Result<()> {
                 })
                 .await
                 .context("Failed to create policy")?;
-            print_json(&policy).context("Failed to render policy")?;
+            runtime.print_data(&policy)?;
         }
         PolicyAction::Get { policy_id } => {
             let policy = client
                 .get_policy(&policy_id)
                 .await
                 .with_context(|| format!("Failed to get policy {policy_id}"))?;
-            print_json(&policy).context("Failed to render policy")?;
+            runtime.print_data(&policy)?;
         }
         PolicyAction::Activate { policy_id } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "policy.activate",
+                    "policy_id": policy_id,
+                }))?;
+                return Ok(());
+            }
             let policy = client
                 .activate_policy(&policy_id)
                 .await
                 .with_context(|| format!("Failed to activate policy {policy_id}"))?;
-            print_json(&policy).context("Failed to render policy")?;
+            runtime.print_data(&policy)?;
         }
         PolicyAction::Deactivate { policy_id } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "policy.deactivate",
+                    "policy_id": policy_id,
+                }))?;
+                return Ok(());
+            }
             let policy = client
                 .deactivate_policy(&policy_id)
                 .await
                 .with_context(|| format!("Failed to deactivate policy {policy_id}"))?;
-            print_json(&policy).context("Failed to render policy")?;
+            runtime.print_data(&policy)?;
         }
     }
     Ok(())

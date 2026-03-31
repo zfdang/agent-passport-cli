@@ -1,4 +1,4 @@
-use crate::cli::AccessKeyAction;
+use crate::{cli::AccessKeyAction, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use kitepass_api_client::{
@@ -6,17 +6,17 @@ use kitepass_api_client::{
 };
 use kitepass_config::{CliConfig, config_dir};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_output::print_json;
+use serde_json::json;
 use std::fs;
 use uuid::Uuid;
 
-pub async fn run(action: AccessKeyAction) -> Result<()> {
+pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
     let api_url = config.resolved_api_url();
     let token = config
         .access_token
         .clone()
-        .context("Please run `kitepass login` first")?;
+        .ok_or(CliError::AuthenticationRequired)?;
 
     let client = PassportClient::new(api_url).with_token(token);
 
@@ -26,17 +26,30 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .list_access_keys()
                 .await
                 .context("Failed to list access keys")?;
-            print_json(&access_keys).context("Failed to render access keys")?;
+            runtime.print_data(&access_keys)?;
         }
         AccessKeyAction::Create {
             name,
             wallet_id,
             policy_id,
         } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "access_key.create",
+                    "name": name,
+                    "wallet_id": wallet_id,
+                    "policy_id": policy_id,
+                }))?;
+                return Ok(());
+            }
+
             if let Some(name) = name.as_deref() {
-                println!("Generating new Ed25519 Agent Access Key for {name}...");
+                runtime.progress(format!(
+                    "Generating new Ed25519 Agent Access Key for {name}..."
+                ));
             } else {
-                println!("Generating new Ed25519 Agent Access Key...");
+                runtime.progress("Generating new Ed25519 Agent Access Key...");
             }
 
             // 1. Generate local keypair
@@ -71,18 +84,8 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 fs::write(&key_path, &pem).context("Failed to write key to disk")?;
             }
 
-            println!("\n=========== AGENT PRIVATE KEY ===========");
-            println!("{}", pem);
-            println!("=========================================\n");
-
-            println!("⚠️ IMPORTANT: The private key string above has been securely saved to:");
-            println!("   {:?}", key_path);
-            println!(
-                "   Please back it up and do not share it with anyone. It will not be shown again.\n"
-            );
-
             // 3. Register public key on Passport Gateway
-            println!("Registering public key with Gateway: {}", pubkey_hex);
+            runtime.progress(format!("Registering public key with Gateway: {pubkey_hex}"));
             let bindings = match (wallet_id.clone(), policy_id.clone()) {
                 (Some(wallet_id), Some(policy_id)) => {
                     let policy = client
@@ -115,7 +118,10 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .register_access_key(&request)
                 .await
                 .context("Failed to prepare access key provisioning")?;
-            println!("Prepared provisioning intent: {}", prepared.intent_id);
+            runtime.progress(format!(
+                "Prepared provisioning intent: {}",
+                prepared.intent_id
+            ));
             let approval = client
                 .approve_provisioning_intent(&prepared.intent_id)
                 .await
@@ -129,10 +135,13 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .await
                 .context("Failed to finalize access key provisioning")?;
 
-            println!(
-                "Agent Access Key registered successfully. Key ID: {}",
-                res.access_key_id
-            );
+            runtime.print_data(&json!({
+                "access_key_id": res.access_key_id,
+                "status": res.status,
+                "public_key": pubkey_hex,
+                "private_key_path": key_path,
+                "bindings": res.bindings,
+            }))?;
         }
         AccessKeyAction::Get { key_id } => {
             let access_key = client
@@ -147,12 +156,11 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
                 .get_access_key_usage(&key_id)
                 .await
                 .with_context(|| format!("Failed to get usage for access key {key_id}"))?;
-            print_json(&serde_json::json!({
+            runtime.print_data(&serde_json::json!({
                 "access_key": access_key,
                 "bindings": bindings,
                 "usage": usage,
-            }))
-            .context("Failed to render access key details")?;
+            }))?;
         }
         AccessKeyAction::Bind {
             key_id,
@@ -165,18 +173,34 @@ pub async fn run(action: AccessKeyAction) -> Result<()> {
             );
         }
         AccessKeyAction::Freeze { key_id } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "access_key.freeze",
+                    "access_key_id": key_id,
+                }))?;
+                return Ok(());
+            }
             let access_key = client
                 .freeze_access_key(&key_id)
                 .await
                 .with_context(|| format!("Failed to freeze access key {key_id}"))?;
-            print_json(&access_key).context("Failed to render access key")?;
+            runtime.print_data(&access_key)?;
         }
         AccessKeyAction::Revoke { key_id } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "access_key.revoke",
+                    "access_key_id": key_id,
+                }))?;
+                return Ok(());
+            }
             let access_key = client
                 .revoke_access_key(&key_id)
                 .await
                 .with_context(|| format!("Failed to revoke access key {key_id}"))?;
-            print_json(&access_key).context("Failed to render access key")?;
+            runtime.print_data(&access_key)?;
         }
     }
     Ok(())
