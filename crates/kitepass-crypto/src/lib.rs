@@ -4,4 +4,5 @@
 /// - HPKE for wallet import envelope encryption
 pub mod agent_key;
 pub mod envelope;
-pub mod hpke;
+
+pub use kap_hpke_shared as hpke;

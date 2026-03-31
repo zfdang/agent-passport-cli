@@ -6,9 +6,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+kap-hpke-shared = { path = "../../../kap-hpke-shared" }
 ed25519-dalek.workspace = true
 aes-gcm.workspace = true
-hpke.workspace = true
 zeroize.workspace = true
 thiserror.workspace = true
 hkdf = "0.12.4"
@@ -16,5 +16,4 @@ sha2 = "0.10"
 base64 = "0.22.1"
 hex = "0.4.3"
 rand = "0.8"
-rand09 = { package = "rand", version = "0.9", features = ["os_rng", "std_rng"] }
 getrandom = "0.2"

@@ -6,6 +6,7 @@ use kitepass_api_client::{
 };
 use kitepass_config::CliConfig;
 use kitepass_crypto::agent_key::AgentKey;
+use serde::Serialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -23,25 +24,43 @@ struct CanonicalSignIntent<'a> {
     session_nonce: &'a str,
 }
 
+#[derive(Serialize)]
+struct CanonicalAgentIntent<'a> {
+    #[serde(rename = "type")]
+    intent_type: &'a str,
+    #[serde(rename = "version")]
+    intent_version: u32,
+    request_id: &'a str,
+    wallet_id: &'a str,
+    access_key_id: &'a str,
+    chain_id: &'a str,
+    signing_type: &'a str,
+    payload_hash: &'a str,
+    destination: &'a str,
+    value: &'a str,
+    session_nonce: &'a str,
+    mode: &'a str,
+}
+
 fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Vec<u8> {
     let payload_hash = format!(
         "0x{}",
         hex::encode(Sha256::digest(intent.payload.as_bytes()))
     );
-    serde_json::to_vec(&serde_json::json!({
-        "type": "sign_intent",
-        "version": 1,
-        "request_id": intent.request_id,
-        "wallet_id": intent.resolved_wallet_id,
-        "access_key_id": intent.access_key_id,
-        "chain_id": intent.chain_id,
-        "signing_type": intent.signing_type,
-        "payload_hash": payload_hash,
-        "destination": intent.destination,
-        "value": intent.value,
-        "session_nonce": intent.session_nonce,
-        "mode": "signature_only",
-    }))
+    serde_json::to_vec(&CanonicalAgentIntent {
+        intent_type: "sign_intent",
+        intent_version: 1,
+        request_id: intent.request_id,
+        wallet_id: intent.resolved_wallet_id,
+        access_key_id: intent.access_key_id,
+        chain_id: intent.chain_id,
+        signing_type: intent.signing_type,
+        payload_hash: &payload_hash,
+        destination: intent.destination,
+        value: intent.value,
+        session_nonce: intent.session_nonce,
+        mode: "signature_only",
+    })
     .expect("canonical sign intent should serialize")
 }
 
