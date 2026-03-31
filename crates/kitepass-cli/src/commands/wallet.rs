@@ -51,10 +51,18 @@ pub async fn run(action: WalletAction) -> Result<()> {
             );
 
             // 2. Prompt for wallet secret
-            let wallet_secret = Password::new()
-                .with_prompt("Enter Wallet Mnemonic or Hex Private Key")
-                .interact()
-                .context("Failed to read wallet secret")?;
+            let wallet_secret = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                dialoguer::Password::new()
+                    .with_prompt("Enter Wallet Mnemonic or Hex Private Key")
+                    .interact()
+                    .context("Failed to read wallet secret")?
+            } else {
+                let mut input = String::new();
+                std::io::stdin()
+                    .read_line(&mut input)
+                    .context("Failed to read wallet secret from stdin")?;
+                input.trim().to_string()
+            };
 
             // 3. Setup Ephemeral Keypair
             let vault_pk = parse_public_key(&attestation.import_public_key)

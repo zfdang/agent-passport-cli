@@ -215,6 +215,7 @@ pub enum SigningMode {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct AgentProof {
     pub access_key_id: String,
     pub session_nonce: String,
@@ -222,6 +223,7 @@ pub struct AgentProof {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct SignRequest {
     pub request_id: String,
     pub idempotency_key: String,
@@ -237,6 +239,7 @@ pub struct SignRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct SignResponse {
     pub request_id: String,
     pub status: String,
@@ -247,6 +250,7 @@ pub struct SignResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct ValidateSignIntentRequest {
     pub request_id: String,
     pub wallet_id: Option<String>,
@@ -260,6 +264,7 @@ pub struct ValidateSignIntentRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct NormalizedIntent {
     pub wallet_id: String,
     pub chain_id: String,
@@ -269,6 +274,7 @@ pub struct NormalizedIntent {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct ValidateSignIntentResponse {
     pub request_id: String,
     pub valid: bool,
