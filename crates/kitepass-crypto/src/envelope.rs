@@ -17,9 +17,8 @@ pub enum EnvelopeError {
 pub struct Envelope;
 
 impl Envelope {
-    /// Encrypts `plaintext` using a shared secret derived from an ECDH exchange.
-    /// Uses HKDF-SHA256 to expand the `shared_secret` into a 32-byte AES-256-GCM key.
-    /// The `pub_key` is the vault_signer's public key (to act as salt or info if required).
+    /// Encrypts `plaintext` using a 32-byte secret input expanded with HKDF-SHA256.
+    /// The `vault_signer_pubkey` binds the resulting ciphertext to the intended recipient context.
     /// Returns the concatenated `nonce` (12 bytes) and ciphertext (including 16-byte auth tag).
     pub fn encrypt(
         shared_secret: &[u8; 32],

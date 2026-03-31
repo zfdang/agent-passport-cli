@@ -5,6 +5,7 @@ pub mod operations;
 pub mod policy;
 pub mod sign;
 pub mod wallet;
+pub mod wallet_import;
 
 use crate::cli::{Cli, Command};
 use crate::runtime::Runtime;
