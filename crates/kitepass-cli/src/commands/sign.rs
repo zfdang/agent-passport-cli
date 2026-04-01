@@ -6,6 +6,7 @@ use kitepass_api_client::{
 };
 use kitepass_config::CliConfig;
 use kitepass_crypto::agent_key::AgentKey;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -47,7 +48,7 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Vec<u8> {
         "0x{}",
         hex::encode(Sha256::digest(intent.payload.as_bytes()))
     );
-    serde_json::to_vec(&CanonicalAgentIntent {
+    let intent = CanonicalAgentIntent {
         intent_type: "sign_intent",
         intent_version: 1,
         request_id: intent.request_id,
@@ -60,8 +61,9 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Vec<u8> {
         value: intent.value,
         session_nonce: intent.session_nonce,
         mode: "signature_only",
-    })
-    .expect("canonical sign intent should serialize")
+    };
+    serde_json_canonicalizer::to_vec(&intent)
+        .expect("canonical sign intent should canonicalize")
 }
 
 pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
@@ -155,9 +157,12 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to create agent session")?;
 
-            let pem = fs::read_to_string(&key_path)
-                .with_context(|| format!("Failed to read private key from {key_path}"))?;
-            let agent_key = AgentKey::from_pem(&pem).context("Failed to parse private key PEM")?;
+            let pem = SecretString::from(
+                fs::read_to_string(&key_path)
+                    .with_context(|| format!("Failed to read private key from {key_path}"))?,
+            );
+            let agent_key =
+                AgentKey::from_pem(pem.expose_secret()).context("Failed to parse private key PEM")?;
             let signature = agent_key.sign_bytes(&canonical_agent_message(&CanonicalSignIntent {
                 request_id: &request_id,
                 resolved_wallet_id: &validate.resolved_wallet_id,

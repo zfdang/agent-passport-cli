@@ -1,4 +1,12 @@
 #!/bin/sh
+#
+# Purpose:
+#   Download and install a released kitepass CLI binary from GitHub Releases.
+# Usage:
+#   sh scripts/install.sh
+#   curl -fsSL .../scripts/install.sh | sh
+# Key env:
+#   KITEPASS_REPO, KITEPASS_VERSION, KITEPASS_INSTALL_DIR
 
 set -eu
 

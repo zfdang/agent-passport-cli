@@ -9,6 +9,7 @@ use kitepass_crypto::agent_key::AgentKey;
 use serde_json::json;
 use std::fs;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
     let config = CliConfig::load_default().unwrap_or_default();
@@ -60,9 +61,10 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             let keys_dir = config_dir().join("keys");
             fs::create_dir_all(&keys_dir).context("Failed to create keys directory")?;
 
-            let pem = key
-                .export_pem()
-                .context("Failed to serialize private key")?;
+            let pem = Zeroizing::new(
+                key.export_pem()
+                    .context("Failed to serialize private key")?,
+            );
             let key_filename = format!("{}.pem", &pubkey_hex[..8]);
             let key_path = keys_dir.join(&key_filename);
 
@@ -81,7 +83,7 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
 
             #[cfg(not(unix))]
             {
-                fs::write(&key_path, &pem).context("Failed to write key to disk")?;
+                fs::write(&key_path, pem.as_bytes()).context("Failed to write key to disk")?;
             }
 
             // 3. Register public key on Passport Gateway

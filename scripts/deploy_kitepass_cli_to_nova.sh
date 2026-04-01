@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+#
+# Purpose:
+#   Sync, build, and install the kitepass CLI on the nova host.
+# Usage:
+#   bash scripts/deploy_kitepass_cli_to_nova.sh
+# Key env:
+#   NOVA_HOST, NOVA_REMOTE_CLI_DIR, NOVA_REMOTE_INSTALL_DIR
 
 set -euo pipefail
 
