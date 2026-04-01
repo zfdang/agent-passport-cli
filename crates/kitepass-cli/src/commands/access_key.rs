@@ -4,9 +4,7 @@ use chrono::{Duration, Utc};
 use kitepass_api_client::{
     BindingInput, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
 };
-use kitepass_config::{
-    AgentIdentity, AgentRegistry, CliConfig, DEFAULT_AGENT_PROFILE, config_dir,
-};
+use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig, DEFAULT_AGENT_PROFILE, config_dir};
 use kitepass_crypto::agent_key::AgentKey;
 use serde_json::json;
 use std::fs;
@@ -67,34 +65,14 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             let key = AgentKey::generate();
             let pubkey_hex = key.public_key_hex();
 
-            // 2. Export and save the private key locally
+            // 2. Prepare the private key for later writing (after successful provisioning)
             let keys_dir = config_dir().join("keys");
-            fs::create_dir_all(&keys_dir).context("Failed to create keys directory")?;
-
             let pem = Zeroizing::new(
                 key.export_pem()
                     .context("Failed to serialize private key")?,
             );
             let key_filename = format!("{}.pem", &pubkey_hex[..8]);
             let key_path = keys_dir.join(&key_filename);
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                let mut options = fs::OpenOptions::new();
-                options.write(true).create(true).truncate(true).mode(0o600);
-                let mut file = options
-                    .open(&key_path)
-                    .context("Failed to securely open key file")?;
-                use std::io::Write;
-                file.write_all(pem.as_bytes())
-                    .context("Failed to write key to disk")?;
-            }
-
-            #[cfg(not(unix))]
-            {
-                fs::write(&key_path, pem.as_bytes()).context("Failed to write key to disk")?;
-            }
 
             // 3. Register public key on Passport Gateway
             runtime.progress(format!("Registering public key with Gateway: {pubkey_hex}"));
@@ -147,6 +125,27 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to finalize access key provisioning")?;
 
+            // 4. Write private key to disk only after successful provisioning
+            fs::create_dir_all(&keys_dir).context("Failed to create keys directory")?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create(true).truncate(true).mode(0o600);
+                let mut file = options
+                    .open(&key_path)
+                    .context("Failed to securely open key file")?;
+                use std::io::Write;
+                file.write_all(pem.as_bytes())
+                    .context("Failed to write key to disk")?;
+            }
+
+            #[cfg(not(unix))]
+            {
+                fs::write(&key_path, pem.as_bytes()).context("Failed to write key to disk")?;
+            }
+
             // 4. Persist local agent profile
             registry.upsert(AgentIdentity {
                 name: profile_name.clone(),
@@ -160,7 +159,9 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             }
 
             if let Err(e) = registry.save_default() {
-                runtime.progress(format!("Warning: Failed to update local agent registry: {e}"));
+                runtime.progress(format!(
+                    "Warning: Failed to update local agent registry: {e}"
+                ));
             } else if !no_activate {
                 runtime.progress(format!(
                     "Updated local agent registry and activated profile `{profile_name}`."

@@ -65,12 +65,17 @@ impl AgentRegistry {
 
     pub fn upsert(&mut self, agent: AgentIdentity) -> Result<(), ConfigError> {
         validate_profile_name(&agent.name)?;
-        if let Some(existing) = self.agents.iter_mut().find(|existing| existing.name == agent.name) {
+        if let Some(existing) = self
+            .agents
+            .iter_mut()
+            .find(|existing| existing.name == agent.name)
+        {
             *existing = agent;
         } else {
             self.agents.push(agent);
         }
-        self.agents.sort_by(|left, right| left.name.cmp(&right.name));
+        self.agents
+            .sort_by(|left, right| left.name.cmp(&right.name));
         Ok(())
     }
 
@@ -198,7 +203,10 @@ mod tests {
             std::env::remove_var(AGENT_KEY_PATH_ENV);
         }
         let err = env_agent_override().unwrap_err();
-        assert!(matches!(err, ConfigError::IncompleteAgentEnvironmentOverride));
+        assert!(matches!(
+            err,
+            ConfigError::IncompleteAgentEnvironmentOverride
+        ));
         unsafe {
             std::env::remove_var(AGENT_ACCESS_KEY_ID_ENV);
         }

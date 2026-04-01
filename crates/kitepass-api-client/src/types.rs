@@ -270,6 +270,7 @@ pub struct SignRequest {
 pub struct SignResponse {
     pub request_id: String,
     pub status: String,
+    pub permit_id: Option<String>,
     pub signature: Option<String>,
     pub enclave_receipt: Option<String>,
     pub operation_id: Option<String>,

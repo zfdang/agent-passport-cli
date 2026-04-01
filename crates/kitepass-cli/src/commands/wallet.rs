@@ -1,9 +1,7 @@
-use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
 use crate::commands::wallet_import::{build_import_hpke_info, verify_import_attestation};
+use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
-use kitepass_api_client::{
-    ImportAad, PassportClient, UploadWalletCiphertextRequest,
-};
+use kitepass_api_client::{ImportAad, PassportClient, UploadWalletCiphertextRequest};
 use kitepass_config::CliConfig;
 use kitepass_crypto::hpke::seal_to_hex;
 use serde_json::json;

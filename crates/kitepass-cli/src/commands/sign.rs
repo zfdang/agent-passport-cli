@@ -62,8 +62,7 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Vec<u8> {
         session_nonce: intent.session_nonce,
         mode: "signature_only",
     };
-    serde_json_canonicalizer::to_vec(&intent)
-        .expect("canonical sign intent should canonicalize")
+    serde_json_canonicalizer::to_vec(&intent).expect("canonical sign intent should canonicalize")
 }
 
 pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
@@ -117,8 +116,8 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
         } => {
             let registry = AgentRegistry::load_default().unwrap_or_default();
             let env_override = env_agent_override()?;
-            let needs_registry_profile = env_override.is_none()
-                && (access_key_id.is_none() || key_path.is_none());
+            let needs_registry_profile =
+                env_override.is_none() && (access_key_id.is_none() || key_path.is_none());
             let resolved_profile = if needs_registry_profile {
                 Some(registry.resolve_active_agent()?)
             } else {
@@ -188,8 +187,8 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                 fs::read_to_string(&key_path)
                     .with_context(|| format!("Failed to read private key from {key_path}"))?,
             );
-            let agent_key =
-                AgentKey::from_pem(pem.expose_secret()).context("Failed to parse private key PEM")?;
+            let agent_key = AgentKey::from_pem(pem.expose_secret())
+                .context("Failed to parse private key PEM")?;
             let signature = agent_key.sign_bytes(&canonical_agent_message(&CanonicalSignIntent {
                 request_id: &request_id,
                 resolved_wallet_id: &validate.resolved_wallet_id,

@@ -1,11 +1,11 @@
 use crate::error::ApiError;
 use crate::types::{
     AccessKeyListResponse, AccessKeyMutationRequest, AgentAccessKey, AgentSession, AuditEvent,
-    AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse, BindingResult,
-    CreateBindingRequest, CreatePolicyRequest, CreateSessionRequest, DeviceCodeRequest,
-    DeviceCodeResponse, FinalizeAccessKeyRequest, ImportAttestationResponse,
-    ImportSessionRequest, ImportSessionResponse, Operation, OwnerApprovalRecord, Policy,
-    PolicyListResponse, PolicyUsageState, PrepareAccessKeyResponse, ProvisioningIntentStatusResponse,
+    AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse,
+    CreatePolicyRequest, CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse,
+    FinalizeAccessKeyRequest, ImportAttestationResponse, ImportSessionRequest,
+    ImportSessionResponse, Operation, OwnerApprovalRecord, Policy, PolicyListResponse,
+    PolicyUsageState, PrepareAccessKeyResponse, ProvisioningIntentStatusResponse,
     RegisterAccessKeyRequest, RegisterAccessKeyResponse, SignRequest, SignResponse,
     UploadWalletCiphertextRequest, UploadWalletCiphertextResponse, UsageResponse,
     ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse, Wallet,
@@ -26,6 +26,8 @@ impl PassportClient {
             base_url,
             http: reqwest::Client::builder()
                 .user_agent("kitepass-cli/0.1")
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap(),
             token: None,
@@ -163,20 +165,6 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn create_binding(
-        &self,
-        access_key_id: &str,
-        req_body: &CreateBindingRequest,
-    ) -> Result<BindingResult, ApiError> {
-        let url = format!(
-            "{}/v1/agent-access-keys/{}/bindings",
-            self.base_url, access_key_id
-        );
-        let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(req_body).send().await?;
-        Self::handle_res(res).await
-    }
-
     pub async fn list_wallets(&self) -> Result<Vec<Wallet>, ApiError> {
         let url = format!("{}/v1/wallets", self.base_url);
         let req = self.maybe_auth(self.http.get(&url));
@@ -221,20 +209,14 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn freeze_access_key(
-        &self,
-        access_key_id: &str,
-    ) -> Result<AgentAccessKey, ApiError> {
+    pub async fn freeze_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
         let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(&AccessKeyMutationRequest::Freeze).send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn revoke_access_key(
-        &self,
-        access_key_id: &str,
-    ) -> Result<AgentAccessKey, ApiError> {
+    pub async fn revoke_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
         let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(&AccessKeyMutationRequest::Revoke).send().await?;

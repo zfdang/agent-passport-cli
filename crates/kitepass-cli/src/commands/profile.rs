@@ -19,21 +19,15 @@ pub async fn run(action: ProfileAction, runtime: &Runtime) -> Result<()> {
             registry
                 .set_active_profile(&name)
                 .map_err(map_config_error)?;
-            registry
-                .save_default()
-                .map_err(map_config_error)?;
+            registry.save_default().map_err(map_config_error)?;
             runtime.print_data(&json!({
                 "active_profile": name,
                 "status": "updated",
             }))?;
         }
         ProfileAction::Delete { name } => {
-            let removed = registry
-                .remove_profile(&name)
-                .map_err(map_config_error)?;
-            registry
-                .save_default()
-                .map_err(map_config_error)?;
+            let removed = registry.remove_profile(&name).map_err(map_config_error)?;
+            registry.save_default().map_err(map_config_error)?;
             runtime.print_data(&json!({
                 "status": "deleted",
                 "deleted_profile": removed.name,

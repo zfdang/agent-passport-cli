@@ -1236,8 +1236,11 @@ async fn sign_submit_uses_selected_profile_when_flags_are_omitted() {
 
     let bot_key = AgentKey::generate();
     let bot_path = tempdir.path().join("trading_bot.pem");
-    fs::write(&bot_path, bot_key.export_pem().expect("bot key should export"))
-        .expect("bot key should write");
+    fs::write(
+        &bot_path,
+        bot_key.export_pem().expect("bot key should export"),
+    )
+    .expect("bot key should write");
 
     write_agents(
         &tempdir,
