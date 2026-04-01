@@ -3,6 +3,7 @@ pub mod audit;
 pub mod login;
 pub mod operations;
 pub mod policy;
+pub mod profile;
 pub mod sign;
 pub mod wallet;
 pub mod wallet_import;
@@ -19,6 +20,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         Command::Wallet { action } => wallet::run(action, &runtime).await,
         Command::AccessKey { action } => access_key::run(action, &runtime).await,
         Command::Policy { action } => policy::run(action, &runtime).await,
+        Command::Profile { action } => profile::run(action, &runtime).await,
         Command::Sign { action } => sign::run(action, &runtime).await,
         Command::Audit { action } => audit::run(action, &runtime).await,
         Command::Operations { action } => operations::run(action, &runtime).await,

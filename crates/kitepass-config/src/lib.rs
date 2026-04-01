@@ -1,7 +1,15 @@
+pub mod agents;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+pub use agents::{
+    AGENT_ACCESS_KEY_ID_ENV, AGENT_KEY_PATH_ENV, AGENT_PROFILE_ENV, AgentEnvironmentOverride,
+    AgentIdentity, AgentRegistry, DEFAULT_AGENT_PROFILE, env_agent_override,
+    load_agent_registry_default, validate_profile_name,
+};
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
 
@@ -13,6 +21,14 @@ pub enum ConfigError {
     Toml(#[from] toml::de::Error),
     #[error("TOML serialization error: {0}")]
     TomlSer(#[from] toml::ser::Error),
+    #[error("profile not found: {0}")]
+    ProfileNotFound(String),
+    #[error("invalid profile name: {0}")]
+    InvalidProfileName(String),
+    #[error(
+        "{AGENT_ACCESS_KEY_ID_ENV} and {AGENT_KEY_PATH_ENV} must either both be set or both be unset"
+    )]
+    IncompleteAgentEnvironmentOverride,
 }
 
 /// Local CLI configuration.
@@ -42,32 +58,8 @@ impl CliConfig {
     }
 
     /// Saves the configuration to the specified path safely.
-    /// Creates directories if they don't exist and sets 0600 permissions on unix systems.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            fs::create_dir_all(parent)?;
-        }
-
-        let content = toml::to_string(self)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut options = fs::OpenOptions::new();
-            options.write(true).create(true).truncate(true).mode(0o600);
-            let mut file = options.open(path)?;
-            use std::io::Write;
-            file.write_all(content.as_bytes())?;
-        }
-
-        #[cfg(not(unix))]
-        {
-            fs::write(path, content)?;
-        }
-
-        Ok(())
+        save_toml_secure(self, path)
     }
 
     /// Saves the configuration to the default path.
@@ -79,6 +71,33 @@ impl CliConfig {
     pub fn resolved_api_url(&self) -> &str {
         self.api_url.as_deref().unwrap_or(DEFAULT_API_URL)
     }
+}
+
+pub(crate) fn save_toml_secure<T: Serialize>(value: &T, path: &Path) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)?;
+    }
+
+    let content = toml::to_string(value)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true).mode(0o600);
+        let mut file = options.open(path)?;
+        use std::io::Write;
+        file.write_all(content.as_bytes())?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::write(path, content)?;
+    }
+
+    Ok(())
 }
 
 /// Returns the default config directory path.
@@ -93,6 +112,11 @@ pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
+/// Returns the default agent registry path.
+pub fn agents_path() -> PathBuf {
+    config_dir().join("agents.toml")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,12 +129,15 @@ mod tests {
 
         let conf = CliConfig {
             access_token: Some("test_token_123".to_string()),
-            ..Default::default()
+            api_url: Some("https://api.example.test".to_string()),
+            default_chain: Some("eip155:8453".to_string()),
         };
 
         conf.save(&path).unwrap();
 
         let loaded = CliConfig::load(&path).unwrap();
         assert_eq!(loaded.access_token.as_deref(), Some("test_token_123"));
+        assert_eq!(loaded.api_url.as_deref(), Some("https://api.example.test"));
+        assert_eq!(loaded.default_chain.as_deref(), Some("eip155:8453"));
     }
 }

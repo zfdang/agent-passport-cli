@@ -28,20 +28,47 @@ kitepass login
 # Import a wallet
 kitepass wallet import --chain base --name "my-agent-wallet"
 
-# Create an agent access key
-kitepass access-key create --name "trading-agent"
+# Create or replace a local agent profile backed by a new access key
+kitepass access-key create --name trading-agent
 
 # List policies
 kitepass policy list
 
+# Switch the active local agent profile
+kitepass profile use --name trading-agent
+
+# List local agent profiles
+kitepass profile list
+
 # Check audit log
-kitepass audit list --wallet <wallet-id>
+kitepass audit list --wallet-id <wallet-id>
 ```
 
-Override the endpoint for local or staging environments:
+## Local Agent Profiles
+
+Kitepass CLI stores:
+
+- owner/session settings in `~/.config/kitepass/config.toml`
+- local agent profiles in `~/.config/kitepass/agents.toml`
+- agent private keys as PEM files under `~/.config/kitepass/keys/`
+
+`agents.toml` supports multiple named profiles. The CLI resolves agent credentials in this order:
+
+1. `KITE_AGENT_ACCESS_KEY_ID` + `KITE_AGENT_KEY_PATH`
+2. the profile named by `KITE_PROFILE`
+3. the active profile from `agents.toml`
+4. the `default` profile
+
+Example:
 
 ```bash
-kitepass --api-url http://127.0.0.1:8080 login
+KITE_PROFILE=trading-agent kitepass sign submit \
+  --wallet-id wal_123 \
+  --chain-id eip155:8453 \
+  --payload 0xdeadbeef \
+  --destination 0xabc \
+  --value 10 \
+  --sign-and-submit
 ```
 
 ## Development

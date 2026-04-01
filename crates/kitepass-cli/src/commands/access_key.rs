@@ -4,7 +4,9 @@ use chrono::{Duration, Utc};
 use kitepass_api_client::{
     BindingInput, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
 };
-use kitepass_config::{CliConfig, config_dir};
+use kitepass_config::{
+    AgentIdentity, AgentRegistry, CliConfig, DEFAULT_AGENT_PROFILE, config_dir,
+};
 use kitepass_crypto::agent_key::AgentKey;
 use serde_json::json;
 use std::fs;
@@ -33,24 +35,32 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             name,
             wallet_id,
             policy_id,
+            no_activate,
         } => {
+            let mut registry = AgentRegistry::load_default().unwrap_or_default();
+            let profile_name = name.unwrap_or_else(|| registry.selected_profile_name());
+
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "access_key.create",
-                    "name": name,
+                    "profile_name": profile_name,
                     "wallet_id": wallet_id,
                     "policy_id": policy_id,
                 }))?;
                 return Ok(());
             }
 
-            if let Some(name) = name.as_deref() {
-                runtime.progress(format!(
-                    "Generating new Ed25519 Agent Access Key for {name}..."
-                ));
+            if profile_name.trim().is_empty() {
+                anyhow::bail!("Profile name must not be empty");
+            }
+
+            if profile_name == DEFAULT_AGENT_PROFILE {
+                runtime.progress("Generating new Ed25519 Agent Access Key for default profile...");
             } else {
-                runtime.progress("Generating new Ed25519 Agent Access Key...");
+                runtime.progress(format!(
+                    "Generating new Ed25519 Agent Access Key for profile `{profile_name}`..."
+                ));
             }
 
             // 1. Generate local keypair
@@ -137,12 +147,43 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to finalize access key provisioning")?;
 
+            // 4. Persist local agent profile
+            registry.upsert(AgentIdentity {
+                name: profile_name.clone(),
+                access_key_id: res.access_key_id.clone(),
+                private_key_path: key_path.to_string_lossy().to_string(),
+                public_key_hex: pubkey_hex.clone(),
+            })?;
+
+            if !no_activate {
+                registry.active_profile = Some(profile_name.clone());
+            }
+
+            if let Err(e) = registry.save_default() {
+                runtime.progress(format!("Warning: Failed to update local agent registry: {e}"));
+            } else if !no_activate {
+                runtime.progress(format!(
+                    "Updated local agent registry and activated profile `{profile_name}`."
+                ));
+            } else {
+                runtime.progress(format!(
+                    "Updated local agent registry for profile `{profile_name}`."
+                ));
+            }
+
+            // 5. Keep the owner config on disk for API/base settings only.
+            if let Err(e) = config.save_default() {
+                runtime.progress(format!("Warning: Failed to save CLI config: {e}"));
+            }
+
             runtime.print_data(&json!({
+                "profile_name": profile_name,
                 "access_key_id": res.access_key_id,
                 "status": res.status,
                 "public_key": pubkey_hex,
                 "private_key_path": key_path,
                 "bindings": res.bindings,
+                "activated": !no_activate,
             }))?;
         }
         AccessKeyAction::Get { key_id } => {

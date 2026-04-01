@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use kitepass_api_client::{
     AgentProof, PassportClient, SignRequest, SigningMode, ValidateSignIntentRequest,
 };
-use kitepass_config::CliConfig;
+use kitepass_config::{AgentRegistry, CliConfig, env_agent_override};
 use kitepass_crypto::agent_key::AgentKey;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
@@ -115,6 +115,32 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
             key_path,
             sign_and_submit,
         } => {
+            let registry = AgentRegistry::load_default().unwrap_or_default();
+            let env_override = env_agent_override()?;
+            let needs_registry_profile = env_override.is_none()
+                && (access_key_id.is_none() || key_path.is_none());
+            let resolved_profile = if needs_registry_profile {
+                Some(registry.resolve_active_agent()?)
+            } else {
+                None
+            };
+            let access_key_id = access_key_id
+                .or_else(|| env_override.as_ref().map(|override_| override_.access_key_id.clone()))
+                .or_else(|| {
+                    resolved_profile
+                        .as_ref()
+                        .map(|identity| identity.access_key_id.clone())
+                })
+                .context("Missing agent access key ID. Provide via `--access-key-id`, `KITE_AGENT_ACCESS_KEY_ID` env var, or create one with `access-key create`.")?;
+            let key_path = key_path
+                .or_else(|| env_override.as_ref().map(|override_| override_.private_key_path.clone()))
+                .or_else(|| {
+                    resolved_profile
+                        .as_ref()
+                        .map(|identity| identity.private_key_path.clone())
+                })
+                .context("Missing agent private key path. Provide via `--key-path`, `KITE_AGENT_KEY_PATH` env var, or create one with `access-key create`.")?;
+
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
@@ -128,6 +154,7 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                     "value": value,
                     "mode": if sign_and_submit { "sign_and_submit" } else { "signature_only" },
                     "key_path": key_path,
+                    "profile_name": resolved_profile.as_ref().map(|identity| identity.name.clone()),
                 }))?;
                 return Ok(());
             }

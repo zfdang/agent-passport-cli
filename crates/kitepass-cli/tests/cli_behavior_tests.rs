@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use kitepass_config::CliConfig;
+use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::hpke::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair};
 use predicates::str::contains;
@@ -17,6 +17,18 @@ fn config_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
             .join("Application Support")
             .join("kitepass")
             .join("config.toml"),
+    ]
+}
+
+fn agents_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
+    [
+        tempdir.path().join("kitepass").join("agents.toml"),
+        tempdir
+            .path()
+            .join("Library")
+            .join("Application Support")
+            .join("kitepass")
+            .join("agents.toml"),
     ]
 }
 
@@ -45,6 +57,26 @@ fn load_saved_config(tempdir: &TempDir) -> CliConfig {
     }
 
     first.expect("expected CLI config to exist")
+}
+
+fn load_saved_agents(tempdir: &TempDir) -> AgentRegistry {
+    let mut first = None;
+    for path in agents_paths(tempdir) {
+        if path.exists() {
+            let registry = AgentRegistry::load(&path).expect("agent registry should load");
+            if !registry.agents.is_empty() {
+                return registry;
+            }
+            first = Some(registry);
+        }
+    }
+    first.unwrap_or_default()
+}
+
+fn write_agents(tempdir: &TempDir, registry: &AgentRegistry) {
+    for path in agents_paths(tempdir) {
+        registry.save(&path).expect("agent registry should save");
+    }
 }
 
 fn cli_command(tempdir: &TempDir) -> Command {
@@ -89,7 +121,7 @@ fn access_key_create_dry_run_emits_json_without_writing_keys() {
         .success()
         .stdout(contains("\"dry_run\": true"))
         .stdout(contains("\"action\": \"access_key.create\""))
-        .stdout(contains("\"name\": \"worker-key\""));
+        .stdout(contains("\"profile_name\": \"worker-key\""));
 
     assert!(
         !tempdir.path().join("kitepass").join("keys").exists(),
@@ -166,6 +198,12 @@ async fn access_key_create_emits_clean_json_and_writes_key_file() {
             || tempdir.path().join("kitepass").join("keys").exists(),
         "access-key create should persist the generated private key"
     );
+
+    let registry = load_saved_agents(&tempdir);
+    assert_eq!(registry.active_profile.as_deref(), Some("worker-key"));
+    assert_eq!(registry.agents.len(), 1);
+    assert_eq!(registry.agents[0].name, "worker-key");
+    assert_eq!(registry.agents[0].access_key_id, "aak_123");
 }
 
 #[tokio::test]
@@ -1128,4 +1166,185 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
             .starts_with("0x")
     );
     assert_eq!(sign_body["request_id"], validate_body["request_id"]);
+}
+
+#[test]
+fn profile_list_use_and_delete_manage_local_registry() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+    write_agents(
+        &tempdir,
+        &AgentRegistry {
+            active_profile: Some("default".to_string()),
+            agents: vec![
+                AgentIdentity {
+                    name: "default".to_string(),
+                    access_key_id: "aak_default".to_string(),
+                    private_key_path: "/tmp/default.pem".to_string(),
+                    public_key_hex: "abc".to_string(),
+                },
+                AgentIdentity {
+                    name: "trading_bot".to_string(),
+                    access_key_id: "aak_bot".to_string(),
+                    private_key_path: "/tmp/bot.pem".to_string(),
+                    public_key_hex: "def".to_string(),
+                },
+            ],
+        },
+    );
+
+    cli_command(&tempdir)
+        .args(["--json", "profile", "list"])
+        .assert()
+        .success()
+        .stdout(contains("\"active_profile\": \"default\""))
+        .stdout(contains("\"name\": \"trading_bot\""));
+
+    cli_command(&tempdir)
+        .args(["--json", "profile", "use", "--name", "trading_bot"])
+        .assert()
+        .success()
+        .stdout(contains("\"active_profile\": \"trading_bot\""));
+
+    let registry = load_saved_agents(&tempdir);
+    assert_eq!(registry.active_profile.as_deref(), Some("trading_bot"));
+
+    cli_command(&tempdir)
+        .args(["--json", "profile", "delete", "--name", "trading_bot"])
+        .assert()
+        .success()
+        .stdout(contains("\"status\": \"deleted\""));
+
+    let registry = load_saved_agents(&tempdir);
+    assert_eq!(registry.active_profile.as_deref(), Some("default"));
+    assert_eq!(registry.agents.len(), 1);
+    assert_eq!(registry.agents[0].name, "default");
+}
+
+#[tokio::test]
+async fn sign_submit_uses_selected_profile_when_flags_are_omitted() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+    let mock_server = MockServer::start().await;
+    write_config(&tempdir, Some(&mock_server.uri()), None);
+
+    let default_key = AgentKey::generate();
+    let default_path = tempdir.path().join("default.pem");
+    fs::write(
+        &default_path,
+        default_key.export_pem().expect("default key should export"),
+    )
+    .expect("default key should write");
+
+    let bot_key = AgentKey::generate();
+    let bot_path = tempdir.path().join("trading_bot.pem");
+    fs::write(&bot_path, bot_key.export_pem().expect("bot key should export"))
+        .expect("bot key should write");
+
+    write_agents(
+        &tempdir,
+        &AgentRegistry {
+            active_profile: Some("default".to_string()),
+            agents: vec![
+                AgentIdentity {
+                    name: "default".to_string(),
+                    access_key_id: "aak_default".to_string(),
+                    private_key_path: default_path.to_string_lossy().to_string(),
+                    public_key_hex: default_key.public_key_hex(),
+                },
+                AgentIdentity {
+                    name: "trading_bot".to_string(),
+                    access_key_id: "aak_bot".to_string(),
+                    private_key_path: bot_path.to_string_lossy().to_string(),
+                    public_key_hex: bot_key.public_key_hex(),
+                },
+            ],
+        },
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/sign-intents/validate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "request_id": "req_mock_profile",
+            "valid": true,
+            "resolved_wallet_id": "wal_profile",
+            "policy_id": "pol_profile",
+            "policy_version": 1,
+            "normalized": {
+                "wallet_id": "wal_profile",
+                "chain_id": "eip155:8453",
+                "payload_hash": "0xhash",
+                "destination": "0xabc",
+                "value": "10"
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sessions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "session_id": "sess_profile",
+            "access_key_id": "aak_bot",
+            "session_nonce": "nonce_profile",
+            "status": "active",
+            "expires_at": "2026-03-31T00:05:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/signatures"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "request_id": "req_mock_profile",
+            "status": "submitted",
+            "signature": "0xsigned",
+            "enclave_receipt": "0xreceipt",
+            "operation_id": "op_profile",
+            "poll_after_ms": 500
+        })))
+        .mount(&mock_server)
+        .await;
+
+    cli_command(&tempdir)
+        .env("KITE_PROFILE", "trading_bot")
+        .args([
+            "--json",
+            "sign",
+            "submit",
+            "--wallet-id",
+            "wal_profile",
+            "--chain-id",
+            "eip155:8453",
+            "--signing-type",
+            "transaction",
+            "--payload",
+            "0xdeadbeef",
+            "--destination",
+            "0xabc",
+            "--value",
+            "10",
+            "--sign-and-submit",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"status\": \"submitted\""))
+        .stdout(contains("\"operation_id\": \"op_profile\""));
+
+    let requests = mock_server
+        .received_requests()
+        .await
+        .expect("wiremock should record requests");
+    let session_req = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/sessions")
+        .expect("session request should be present");
+    let sign_req = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/signatures")
+        .expect("sign request should be present");
+
+    let session_body: serde_json::Value =
+        serde_json::from_slice(&session_req.body).expect("session body should be json");
+    let sign_body: serde_json::Value =
+        serde_json::from_slice(&sign_req.body).expect("sign body should be json");
+
+    assert_eq!(session_body["access_key_id"], "aak_bot");
+    assert_eq!(sign_body["access_key_id"], "aak_bot");
 }

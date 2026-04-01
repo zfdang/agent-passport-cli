@@ -54,6 +54,12 @@ pub enum Command {
         action: PolicyAction,
     },
 
+    /// Local agent profile management
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
+
     /// Transaction signing
     Sign {
         #[command(subcommand)]
@@ -105,14 +111,17 @@ pub enum WalletAction {
 pub enum AccessKeyAction {
     /// List access keys
     List,
-    /// Create a new access key
+    /// Create or replace a local agent profile backed by a new access key
     Create {
+        /// Local profile name. Defaults to the selected profile or `default`.
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
         wallet_id: Option<String>,
         #[arg(long)]
         policy_id: Option<String>,
+        #[arg(long, default_value_t = false)]
+        no_activate: bool,
     },
     /// Get access key details
     Get {
@@ -137,6 +146,22 @@ pub enum AccessKeyAction {
     Revoke {
         #[arg(long)]
         key_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ProfileAction {
+    /// List local agent profiles
+    List,
+    /// Set the active local agent profile
+    Use {
+        #[arg(long)]
+        name: String,
+    },
+    /// Delete a local agent profile record
+    Delete {
+        #[arg(long)]
+        name: String,
     },
 }
 
@@ -206,7 +231,7 @@ pub enum SignAction {
     /// Submit a signing request
     Submit {
         #[arg(long)]
-        access_key_id: String,
+        access_key_id: Option<String>,
         #[arg(long)]
         wallet_id: Option<String>,
         #[arg(long, default_value = "auto")]
@@ -222,7 +247,7 @@ pub enum SignAction {
         #[arg(long, default_value = "0")]
         value: String,
         #[arg(long)]
-        key_path: String,
+        key_path: Option<String>,
         #[arg(long, default_value_t = false)]
         sign_and_submit: bool,
     },
