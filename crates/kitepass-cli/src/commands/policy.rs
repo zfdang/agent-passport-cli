@@ -52,7 +52,9 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
                 return Ok(());
             }
 
-            let _ = name;
+            // Policy name is used in dry-run output above; the Gateway API
+            // does not accept a name field yet, so we intentionally drop it here.
+            drop(name);
             if valid_for_hours <= 0 {
                 anyhow::bail!("--valid-for-hours must be a positive integer");
             }

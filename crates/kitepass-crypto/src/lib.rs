@@ -5,5 +5,4 @@
 /// - AES-256-GCM encryption for agent private keys (CryptoEnvelope)
 pub mod agent_key;
 pub mod encryption;
-pub mod envelope;
 pub mod hpke;

@@ -272,32 +272,6 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn update_policy(
-        &self,
-        policy_id: &str,
-        req_body: &CreatePolicyRequest,
-    ) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
-        let req = self.maybe_auth(self.http.post(&url));
-        let res = req
-            .json(&serde_json::json!({
-                "operation": "update",
-                "binding_id": req_body.binding_id,
-                "wallet_id": req_body.wallet_id,
-                "access_key_id": req_body.access_key_id,
-                "allowed_chains": req_body.allowed_chains,
-                "allowed_actions": req_body.allowed_actions,
-                "max_single_amount": req_body.max_single_amount,
-                "max_daily_amount": req_body.max_daily_amount,
-                "allowed_destinations": req_body.allowed_destinations,
-                "valid_from": req_body.valid_from,
-                "valid_until": req_body.valid_until,
-            }))
-            .send()
-            .await?;
-        Self::handle_res(res).await
-    }
-
     pub async fn activate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
         let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
         let req = self.maybe_auth(self.http.post(&url));

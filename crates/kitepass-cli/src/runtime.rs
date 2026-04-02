@@ -64,6 +64,7 @@ impl Runtime {
         }
     }
 
+    /// Like `progress()` but never suppressed by `--quiet`.
     pub fn important(&self, message: impl AsRef<str>) {
         if matches!(self.options.output_format, OutputFormat::Json) {
             eprintln!("{}", message.as_ref());
