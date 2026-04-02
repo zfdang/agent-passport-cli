@@ -33,7 +33,7 @@ The CLI does not store the Combined Token on disk.
 
 ## Local Storage Format
 
-Local agent profiles are stored in `~/.config/kitepass/agents.toml`:
+Local agent profiles are stored in `~/.kitepass/agents.toml`:
 
 ```toml
 [[agents]]

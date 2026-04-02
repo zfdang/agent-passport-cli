@@ -22,7 +22,7 @@ Agent 仅需配置一个环境变量：`KITE_AGENT_TOKEN = "kite_tk_<access_key_
 
 ## 详细设计
 
-### 1. 存储结构 (`~/.config/kitepass/agents.toml`)
+### 1. 存储结构 (`~/.kitepass/agents.toml`)
 ```toml
 [[agents]]
 name = "trading-bot"

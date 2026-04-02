@@ -1287,6 +1287,7 @@ dependencies = [
  "kitepass-crypto",
  "kitepass-output",
  "predicates",
+ "rand_core 0.9.5",
  "reqwest",
  "secrecy",
  "serde",

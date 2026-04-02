@@ -1,8 +1,8 @@
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce as GcmNonce}; // 12-byte nonce
 use hkdf::Hkdf;
-use rand::RngCore;
 use rand::rngs::OsRng;
+use rand::RngCore;
 use sha2::Sha256;
 
 #[derive(Debug, thiserror::Error)]

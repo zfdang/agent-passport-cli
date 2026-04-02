@@ -1,11 +1,11 @@
 use crate::cli::SignAction;
 use crate::commands::{load_agent_registry, load_cli_config};
 use crate::runtime::Runtime;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use kitepass_api_client::{
     AgentProof, PassportClient, SignRequest, SigningMode, ValidateSignIntentRequest,
 };
-use kitepass_config::{AgentRegistry, env_agent_token};
+use kitepass_config::{env_agent_token, AgentRegistry};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::encryption::CombinedToken;
 use serde::Serialize;
@@ -93,17 +93,17 @@ fn resolve_submit_signer(
     registry: &AgentRegistry,
 ) -> Result<ResolvedSigner> {
     let token_str = env_agent_token().context(
-        "`kitepass sign submit` requires KITE_AGENT_TOKEN because local agent keys are stored as encrypted envelopes in `~/.config/kitepass/agents.toml`.",
+        "`kitepass sign submit` requires KITE_AGENT_TOKEN because local agent keys are stored as encrypted envelopes in `~/.kitepass/agents.toml`.",
     )?;
     let token = CombinedToken::parse(&token_str).context("Failed to parse KITE_AGENT_TOKEN")?;
 
-    if let Some(access_key_id) = cli_access_key_id
-        && access_key_id != token.access_key_id
-    {
-        bail!(
-            "`--access-key-id` ({access_key_id}) does not match the access key embedded in KITE_AGENT_TOKEN ({})",
-            token.access_key_id
-        );
+    if let Some(access_key_id) = cli_access_key_id {
+        if access_key_id != token.access_key_id {
+            bail!(
+                "`--access-key-id` ({access_key_id}) does not match the access key embedded in KITE_AGENT_TOKEN ({})",
+                token.access_key_id
+            );
+        }
     }
 
     let identity = registry
@@ -111,7 +111,7 @@ fn resolve_submit_signer(
         .cloned()
         .with_context(|| {
             format!(
-                "No local encrypted agent profile found for access_key_id `{}`. Recreate it on this machine with `kitepass access-key create --name <profile>` or sync `~/.config/kitepass/agents.toml`.",
+                "No local encrypted agent profile found for access_key_id `{}`. Recreate it on this machine with `kitepass access-key create --name <profile>` or sync `~/.kitepass/agents.toml`.",
                 token.access_key_id
             )
         })?;

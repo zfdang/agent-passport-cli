@@ -1,20 +1,22 @@
 use crate::{commands::load_cli_config, runtime::Runtime};
 use anyhow::{Context, Result};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use kitepass_api_client::{AuthPollRequest, DeviceCodeRequest, PassportClient};
+use rand_core::{OsRng, TryRngCore};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::cmp;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use uuid::Uuid;
 use zeroize::Zeroizing;
 
 const MAX_DEVICE_CODE_TIMEOUT_SECS: u64 = 600;
 const MAX_DEVICE_CODE_ERROR_BACKOFF_SECS: u64 = 30;
 
 fn generate_pkce_verifier() -> String {
-    format!("kp{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
+    let mut bytes = [0u8; 32];
+    OsRng.try_fill_bytes(&mut bytes).expect("OS RNG failed");
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 fn pkce_s256_challenge(code_verifier: &str) -> String {
@@ -48,12 +50,12 @@ pub async fn run(runtime: &Runtime) -> Result<()> {
         .await
         .context("Failed to request device code")?;
 
-    if !runtime.non_interactive()
-        && let Err(err) = webbrowser::open(&device_res.verification_uri)
-    {
-        runtime.progress(format!(
-            "Unable to open browser automatically: {err}. Continue in your browser manually."
-        ));
+    if !runtime.non_interactive() {
+        if let Err(err) = webbrowser::open(&device_res.verification_uri) {
+            runtime.progress(format!(
+                "Unable to open browser automatically: {err}. Continue in your browser manually."
+            ));
+        }
     }
 
     runtime.important("\n=============================================");
@@ -96,10 +98,10 @@ pub async fn run(runtime: &Runtime) -> Result<()> {
                         return Ok(());
                     }
 
-                    if let Some(error) = poll_res.error
-                        && error != "authorization_pending"
-                    {
-                        anyhow::bail!("Authorization failed: {}", error);
+                    if let Some(error) = poll_res.error {
+                        if error != "authorization_pending" {
+                            anyhow::bail!("Authorization failed: {}", error);
+                        }
                     }
                 }
                 Err(e) => {

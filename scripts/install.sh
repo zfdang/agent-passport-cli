@@ -10,7 +10,7 @@
 
 set -eu
 
-REPO="${KITEPASS_REPO:-zfdang/kite-agent-passport-cli}"
+REPO="${KITEPASS_REPO:-zfdang/agent-passport-cli}"
 BINARY_NAME="${KITEPASS_BINARY_NAME:-kitepass}"
 INSTALL_DIR="${KITEPASS_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${KITEPASS_VERSION:-latest}"

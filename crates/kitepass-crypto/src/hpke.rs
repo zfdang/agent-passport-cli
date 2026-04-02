@@ -1,8 +1,8 @@
 use hpke::{
-    Deserializable, Kem as KemTrait, OpModeR, OpModeS, Serializable, aead::AesGcm256,
-    kdf::HkdfSha256, kem::X25519HkdfSha256, setup_receiver, setup_sender,
+    aead::AesGcm256, kdf::HkdfSha256, kem::X25519HkdfSha256, setup_receiver, setup_sender,
+    Deserializable, Kem as KemTrait, OpModeR, OpModeS, Serializable,
 };
-use rand09::{SeedableRng, rngs::StdRng};
+use rand09::{rngs::StdRng, SeedableRng};
 
 type ImportKem = X25519HkdfSha256;
 type ImportKdf = HkdfSha256;
@@ -108,7 +108,7 @@ pub fn open_from_hex(
 
 #[cfg(test)]
 mod tests {
-    use super::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair, open_from_hex, seal_to_hex};
+    use super::{generate_recipient_keypair, open_from_hex, seal_to_hex, IMPORT_ENCRYPTION_SCHEME};
 
     #[test]
     fn hpke_round_trip_succeeds() {

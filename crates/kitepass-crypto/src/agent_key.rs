@@ -1,8 +1,9 @@
 use ed25519_dalek::{
-    Signature, Signer, SigningKey, VerifyingKey,
     pkcs8::{DecodePrivateKey, EncodePrivateKey},
+    Signature, Signer, SigningKey, VerifyingKey,
 };
 use rand::rngs::OsRng;
+use zeroize::Zeroizing;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentKeyError {
@@ -43,13 +44,13 @@ impl AgentKey {
     }
 
     /// Exports the private key in PKCS#8 PEM format.
-    /// The private key should be zeroized after use.
-    pub fn export_pem(&self) -> Result<String, AgentKeyError> {
+    /// The returned string is wrapped in Zeroizing to ensure memory cleanup.
+    pub fn export_pem(&self) -> Result<Zeroizing<String>, AgentKeyError> {
         let doc = self
             .signing_key
             .to_pkcs8_pem(Default::default())
             .map_err(|e| AgentKeyError::SerializationError(e.to_string()))?;
-        Ok(doc.to_string())
+        Ok(Zeroizing::new(doc.to_string()))
     }
 
     /// Signs the provided message bytes and returns the raw signature bytes.

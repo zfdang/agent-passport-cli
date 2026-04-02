@@ -7,13 +7,13 @@ Default API endpoint: `https://api.kitepass.xyz`
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zfdang/kite-agent-passport-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zfdang/agent-passport-cli/main/scripts/install.sh | sh
 ```
 
 Install a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zfdang/kite-agent-passport-cli/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/zfdang/agent-passport-cli/main/scripts/install.sh | \
   KITEPASS_VERSION=v0.1.0 sh
 ```
 
@@ -60,7 +60,7 @@ kitepass audit list --wallet-id <wallet-id>
 Kitepass CLI stores:
 
 - owner/session settings in `~/.config/kitepass/config.toml`
-- local agent profiles in `~/.config/kitepass/agents.toml`
+- local agent profiles in `~/.kitepass/agents.toml`
 - agent private keys as encrypted inline `CryptoEnvelope` records inside `agents.toml`
 
 `access-key create` prints a one-time Combined Token:
@@ -104,4 +104,4 @@ cargo run -- --help
 
 ## Related Repositories
 
-- [`kite-agent-passport`](https://github.com/zfdang/kite-agent-passport) — main platform repository
+- [`agent-passport`](https://github.com/zfdang/agent-passport) — main platform repository

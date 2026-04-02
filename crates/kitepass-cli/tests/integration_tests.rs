@@ -2,7 +2,7 @@ use kitepass_api_client::{
     AgentProof, AuthPollRequest, DeviceCodeRequest, ImportAad, PassportClient, SignRequest,
     SigningMode, UploadWalletCiphertextRequest, ValidateSignIntentRequest,
 };
-use kitepass_crypto::hpke::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair, seal_to_hex};
+use kitepass_crypto::hpke::{generate_recipient_keypair, seal_to_hex, IMPORT_ENCRYPTION_SCHEME};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::encryption::{CombinedToken, CryptoEnvelope};
-use kitepass_crypto::hpke::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair};
+use kitepass_crypto::hpke::{generate_recipient_keypair, IMPORT_ENCRYPTION_SCHEME};
 use predicates::str::contains;
 use std::fs;
 use tempfile::TempDir;
@@ -26,13 +26,8 @@ fn config_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
 
 fn agents_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
     [
+        tempdir.path().join(".kitepass").join("agents.toml"),
         tempdir.path().join("kitepass").join("agents.toml"),
-        tempdir
-            .path()
-            .join("Library")
-            .join("Application Support")
-            .join("kitepass")
-            .join("agents.toml"),
     ]
 }
 
@@ -1215,12 +1210,10 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
     assert_eq!(sign_body["mode"], "sign_and_submit");
     assert_eq!(sign_body["agent_proof"]["access_key_id"], "aak_123");
     assert_eq!(sign_body["agent_proof"]["session_nonce"], "nonce_123");
-    assert!(
-        sign_body["agent_proof"]["signature"]
-            .as_str()
-            .expect("signature should be a string")
-            .starts_with("0x")
-    );
+    assert!(sign_body["agent_proof"]["signature"]
+        .as_str()
+        .expect("signature should be a string")
+        .starts_with("0x"));
     assert_eq!(sign_body["request_id"], validate_body["request_id"]);
 }
 

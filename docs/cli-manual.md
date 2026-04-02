@@ -67,7 +67,7 @@ kitepass access-key create \
   --policy-id <POLICY_ID>
 ```
 
-This creates or updates a local agent profile in `~/.config/kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints a one-time Combined Token:
+This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints a one-time Combined Token:
 
 ```text
 KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
@@ -146,4 +146,4 @@ For `sign validate`, the access key is resolved in this order:
 - **Missing Token**: `sign submit` now requires `KITE_AGENT_TOKEN`. If the token is lost, revoke the access key and create a new one.
 - **Config Files**:
   - `~/.config/kitepass/config.toml`
-  - `~/.config/kitepass/agents.toml`
+  - `~/.kitepass/agents.toml`

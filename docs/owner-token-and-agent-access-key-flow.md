@@ -92,7 +92,7 @@ The important property here is that the **private key never leaves the local mac
 
 After provisioning succeeds, the CLI stores the agent identity in:
 
-- `~/.config/kitepass/agents.toml`
+- `~/.kitepass/agents.toml`
 
 That record contains the local profile name, the Passport `access_key_id`, the public key hex, and the encrypted private-key envelope. The Combined Token itself is not stored on disk.
 

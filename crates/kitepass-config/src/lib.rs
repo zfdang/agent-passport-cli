@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub use agents::{
-    AGENT_PROFILE_ENV, AGENT_TOKEN_ENV, AgentIdentity, AgentRegistry, DEFAULT_AGENT_PROFILE,
-    env_agent_token, load_agent_registry_default, validate_profile_name,
+    env_agent_token, load_agent_registry_default, validate_profile_name, AgentIdentity,
+    AgentRegistry, AGENT_PROFILE_ENV, AGENT_TOKEN_ENV, DEFAULT_AGENT_PROFILE,
 };
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
@@ -71,10 +71,10 @@ impl CliConfig {
 }
 
 pub(crate) fn save_toml_secure<T: Serialize>(value: &T, path: &Path) -> Result<(), ConfigError> {
-    if let Some(parent) = path.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent)?;
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
     }
 
     let content = toml::to_string(value)?;
@@ -104,6 +104,13 @@ pub fn config_dir() -> PathBuf {
         .join("kitepass")
 }
 
+/// Returns the local agent profile directory path.
+pub fn agents_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".kitepass")
+}
+
 /// Returns the default config file path.
 pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
@@ -111,7 +118,7 @@ pub fn config_path() -> PathBuf {
 
 /// Returns the default agent registry path.
 pub fn agents_path() -> PathBuf {
-    config_dir().join("agents.toml")
+    agents_dir().join("agents.toml")
 }
 
 #[cfg(test)]

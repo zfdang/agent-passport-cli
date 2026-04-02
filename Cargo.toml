@@ -1,5 +1,5 @@
 [workspace]
-resolver = "3"
+resolver = "2"
 members = [
     "crates/kitepass-cli",
     "crates/kitepass-api-client",
@@ -10,9 +10,9 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/zfdang/kite-agent-passport-cli"
+repository = "https://github.com/zfdang/agent-passport-cli"
 
 [workspace.dependencies]
 # ── workspace crates ─────────────────────────────────────

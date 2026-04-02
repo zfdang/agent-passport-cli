@@ -11,7 +11,7 @@ use kitepass_api_client::{
 };
 use kitepass_config::{AgentIdentity, DEFAULT_AGENT_PROFILE};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::{CombinedToken, CryptoEnvelope, generate_secret_key};
+use kitepass_crypto::encryption::{generate_secret_key, CombinedToken, CryptoEnvelope};
 use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -87,10 +87,9 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
 
             // 2. Generate a secret key for the Combined Token and encrypt the private key
             let secret_key = generate_secret_key();
-            let pem = Zeroizing::new(
-                key.export_pem()
-                    .context("Failed to serialize private key")?,
-            );
+            let pem = key
+                .export_pem()
+                .context("Failed to serialize private key")?;
             let encrypted_key = CryptoEnvelope::encrypt(pem.as_bytes(), &secret_key)
                 .context("Failed to encrypt private key")?;
 

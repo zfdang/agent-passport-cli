@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use crate::{ConfigError, agents_path, save_toml_secure};
+use crate::{agents_path, save_toml_secure, ConfigError};
 
 pub const DEFAULT_AGENT_PROFILE: &str = "default";
 pub const AGENT_PROFILE_ENV: &str = "KITE_PROFILE";

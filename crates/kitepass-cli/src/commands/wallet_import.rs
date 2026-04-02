@@ -278,10 +278,9 @@ mod tests {
 
         let err = verify_import_attestation(&session, &attestation)
             .expect_err("mismatched measurements should be rejected");
-        assert!(
-            err.to_string()
-                .contains("measurements did not match Gateway expectations")
-        );
+        assert!(err
+            .to_string()
+            .contains("measurements did not match Gateway expectations"));
     }
 
     #[test]
@@ -312,9 +311,8 @@ mod tests {
 
         let err = verify_import_attestation(&session, &attestation)
             .expect_err("mismatched reviewed build should be rejected");
-        assert!(
-            err.to_string()
-                .contains("reviewed build metadata did not match Gateway metadata")
-        );
+        assert!(err
+            .to_string()
+            .contains("reviewed build metadata did not match Gateway metadata"));
     }
 }
