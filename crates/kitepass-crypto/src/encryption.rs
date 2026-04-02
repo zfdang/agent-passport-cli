@@ -51,7 +51,12 @@ impl CombinedToken {
             .rsplit_once('_')
             .ok_or(EncryptionError::InvalidTokenFormat)?;
 
-        if !access_key_id.starts_with("aak_") || access_key_id.len() < 5 || secret_key.is_empty() {
+        if !access_key_id.starts_with("aak_") || access_key_id.len() < 5 {
+            return Err(EncryptionError::InvalidTokenFormat);
+        }
+
+        // Secret key must be 64 hex characters (32 bytes).
+        if secret_key.len() != 64 || !secret_key.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(EncryptionError::InvalidTokenFormat);
         }
 
@@ -163,12 +168,16 @@ mod tests {
 
     #[test]
     fn combined_token_round_trip() {
-        let formatted = CombinedToken::format("aak_abc123", "mysecretkey");
-        assert_eq!(formatted, "kite_tk_aak_abc123_mysecretkey");
+        let secret = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let formatted = CombinedToken::format("aak_abc123", secret);
+        assert_eq!(
+            formatted,
+            "kite_tk_aak_abc123_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        );
 
         let parsed = CombinedToken::parse(&formatted).unwrap();
         assert_eq!(parsed.access_key_id, "aak_abc123");
-        assert_eq!(*parsed.secret_key, "mysecretkey");
+        assert_eq!(*parsed.secret_key, secret);
     }
 
     #[test]
@@ -188,10 +197,11 @@ mod tests {
 
     #[test]
     fn combined_token_supports_access_key_ids_with_additional_underscores() {
-        let formatted = CombinedToken::format("aak_alpha_beta", "mysecretkey");
+        let secret = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let formatted = CombinedToken::format("aak_alpha_beta", secret);
         let parsed = CombinedToken::parse(&formatted).unwrap();
         assert_eq!(parsed.access_key_id, "aak_alpha_beta");
-        assert_eq!(*parsed.secret_key, "mysecretkey");
+        assert_eq!(*parsed.secret_key, secret);
     }
 
     #[test]

@@ -53,6 +53,9 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
             }
 
             let _ = name;
+            if valid_for_hours <= 0 {
+                anyhow::bail!("--valid-for-hours must be a positive integer");
+            }
             let now = Utc::now();
             let policy = client
                 .create_policy(&CreatePolicyRequest {
