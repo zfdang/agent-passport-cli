@@ -49,7 +49,7 @@ pub fn build_import_hpke_info(
     session: &ImportSessionResponse,
     attestation: &ImportAttestationResponse,
 ) -> Result<Vec<u8>> {
-    Ok(serde_json::to_vec(&ImportHpkeInfo {
+    serde_json::to_vec(&ImportHpkeInfo {
         document_version: 1,
         import_session_id: &session.session_id,
         vault_signer_instance_id: &session.vault_signer_instance_id,
@@ -67,7 +67,7 @@ pub fn build_import_hpke_info(
             .reviewed_build
             .security_model_ref,
     })
-    .context("Failed to serialize HPKE import info")?)
+    .context("Failed to serialize HPKE import info")
 }
 
 pub fn verify_import_attestation(

@@ -20,18 +20,17 @@ pub struct PassportClient {
 }
 
 impl PassportClient {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>) -> Result<Self, ApiError> {
         let base_url = base_url.into().trim_end_matches('/').to_string();
-        Self {
+        Ok(Self {
             base_url,
             http: reqwest::Client::builder()
                 .user_agent("kitepass-cli/0.1")
                 .connect_timeout(std::time::Duration::from_secs(5))
                 .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap(),
+                .build()?,
             token: None,
-        }
+        })
     }
 
     pub fn with_token(mut self, token: String) -> Self {
@@ -54,7 +53,10 @@ impl PassportClient {
         if status.is_success() {
             Ok(res.json::<T>().await?)
         } else {
-            let msg = res.text().await.unwrap_or_default();
+            let msg = match res.text().await {
+                Ok(body) => body,
+                Err(error) => format!("failed to read error response body: {error}"),
+            };
             Err(ApiError::HttpStatus {
                 status,
                 message: msg,

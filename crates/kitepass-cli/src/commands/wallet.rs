@@ -1,21 +1,25 @@
+use crate::commands::load_cli_config;
 use crate::commands::wallet_import::{build_import_hpke_info, verify_import_attestation};
 use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
 use kitepass_api_client::{ImportAad, PassportClient, UploadWalletCiphertextRequest};
-use kitepass_config::CliConfig;
 use kitepass_crypto::hpke::seal_to_hex;
 use serde_json::json;
+use tokio::task::spawn_blocking;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
-    let config = CliConfig::load_default().unwrap_or_default();
+    let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
         .access_token
         .clone()
         .ok_or(CliError::AuthenticationRequired)?;
 
-    let client = PassportClient::new(api_url).with_token(token);
+    let client = PassportClient::new(api_url)
+        .context("Failed to initialize Passport API client")?
+        .with_token(token);
 
     match action {
         WalletAction::List => {
@@ -64,16 +68,29 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
             // 2. Prompt for wallet secret
             let wallet_secret = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
                 runtime.require_secret_from_stdin("wallet import")?;
-                dialoguer::Password::new()
-                    .with_prompt("Enter Wallet Mnemonic or Hex Private Key")
-                    .interact()
-                    .context("Failed to read wallet secret")?
+                spawn_blocking(|| -> Result<Zeroizing<String>> {
+                    Ok(Zeroizing::new(
+                        dialoguer::Password::new()
+                            .with_prompt("Enter Wallet Mnemonic or Hex Private Key")
+                            .interact()
+                            .context("Failed to read wallet secret")?,
+                    ))
+                })
+                .await
+                .context("wallet prompt task failed")??
             } else {
-                let mut input = String::new();
-                std::io::stdin()
-                    .read_line(&mut input)
-                    .context("Failed to read wallet secret from stdin")?;
-                input.trim().to_string()
+                spawn_blocking(|| -> Result<Zeroizing<String>> {
+                    let mut input = Zeroizing::new(String::new());
+                    std::io::stdin()
+                        .read_line(&mut input)
+                        .context("Failed to read wallet secret from stdin")?;
+                    while matches!(input.chars().last(), Some('\n' | '\r')) {
+                        input.pop();
+                    }
+                    Ok(input)
+                })
+                .await
+                .context("stdin wallet read task failed")??
             };
 
             let aad = ImportAad {
@@ -94,10 +111,6 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 wallet_secret.as_bytes(),
             )
             .context("Failed to HPKE-encrypt wallet secret")?;
-
-            // Clear the password string
-            let mut wallet_secret = wallet_secret;
-            wallet_secret.clear();
 
             // 4. Upload Ciphertext
             runtime.progress("Uploading encrypted envelope to Passport Gateway...");

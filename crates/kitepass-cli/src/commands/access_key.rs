@@ -1,25 +1,44 @@
-use crate::{cli::AccessKeyAction, error::CliError, runtime::Runtime};
+use crate::{
+    cli::AccessKeyAction,
+    commands::{load_agent_registry, load_cli_config},
+    error::CliError,
+    runtime::Runtime,
+};
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use kitepass_api_client::{
-    BindingInput, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
+    BindingInput, BindingResult, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
 };
-use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig, DEFAULT_AGENT_PROFILE, config_dir};
+use kitepass_config::{AgentIdentity, DEFAULT_AGENT_PROFILE};
 use kitepass_crypto::agent_key::AgentKey;
+use kitepass_crypto::encryption::{CombinedToken, CryptoEnvelope, generate_secret_key};
+use serde::Serialize;
 use serde_json::json;
-use std::fs;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+#[derive(Serialize)]
+struct AccessKeyCreateOutput<'a> {
+    profile_name: &'a str,
+    access_key_id: &'a str,
+    status: &'a str,
+    public_key: &'a str,
+    combined_token: &'a str,
+    bindings: &'a [BindingResult],
+    activated: bool,
+}
+
 pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
-    let config = CliConfig::load_default().unwrap_or_default();
+    let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
         .access_token
         .clone()
         .ok_or(CliError::AuthenticationRequired)?;
 
-    let client = PassportClient::new(api_url).with_token(token);
+    let client = PassportClient::new(api_url)
+        .context("Failed to initialize Passport API client")?
+        .with_token(token);
 
     match action {
         AccessKeyAction::List => {
@@ -35,7 +54,8 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             policy_id,
             no_activate,
         } => {
-            let mut registry = AgentRegistry::load_default().unwrap_or_default();
+            let mut registry =
+                load_agent_registry().context("Failed to load local agent registry")?;
             let profile_name = name.unwrap_or_else(|| registry.selected_profile_name());
 
             if runtime.dry_run_enabled() {
@@ -65,14 +85,14 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             let key = AgentKey::generate();
             let pubkey_hex = key.public_key_hex();
 
-            // 2. Prepare the private key for later writing (after successful provisioning)
-            let keys_dir = config_dir().join("keys");
+            // 2. Generate a secret key for the Combined Token and encrypt the private key
+            let secret_key = generate_secret_key();
             let pem = Zeroizing::new(
                 key.export_pem()
                     .context("Failed to serialize private key")?,
             );
-            let key_filename = format!("{}.pem", &pubkey_hex[..8]);
-            let key_path = keys_dir.join(&key_filename);
+            let encrypted_key = CryptoEnvelope::encrypt(pem.as_bytes(), &secret_key)
+                .context("Failed to encrypt private key")?;
 
             // 3. Register public key on Passport Gateway
             runtime.progress(format!("Registering public key with Gateway: {pubkey_hex}"));
@@ -125,42 +145,22 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to finalize access key provisioning")?;
 
-            // 4. Write private key to disk only after successful provisioning
-            fs::create_dir_all(&keys_dir).context("Failed to create keys directory")?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                let mut options = fs::OpenOptions::new();
-                options.write(true).create(true).truncate(true).mode(0o600);
-                let mut file = options
-                    .open(&key_path)
-                    .context("Failed to securely open key file")?;
-                use std::io::Write;
-                file.write_all(pem.as_bytes())
-                    .context("Failed to write key to disk")?;
-            }
-
-            #[cfg(not(unix))]
-            {
-                fs::write(&key_path, pem.as_bytes()).context("Failed to write key to disk")?;
-            }
-
-            // 4. Persist local agent profile
+            // 4. Persist agent profile with encrypted key inline
             registry.upsert(AgentIdentity {
                 name: profile_name.clone(),
                 access_key_id: res.access_key_id.clone(),
-                private_key_path: key_path.to_string_lossy().to_string(),
                 public_key_hex: pubkey_hex.clone(),
+                encrypted_key,
             })?;
 
             if !no_activate {
                 registry.active_profile = Some(profile_name.clone());
             }
 
-            if let Err(e) = registry.save_default() {
-                runtime.progress(format!(
-                    "Warning: Failed to update local agent registry: {e}"
+            let mut persistence_errors = Vec::new();
+            if let Err(error) = registry.save_default() {
+                persistence_errors.push(format!(
+                    "failed to persist encrypted local agent profile: {error}"
                 ));
             } else if !no_activate {
                 runtime.progress(format!(
@@ -172,20 +172,37 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 ));
             }
 
-            // 5. Keep the owner config on disk for API/base settings only.
-            if let Err(e) = config.save_default() {
-                runtime.progress(format!("Warning: Failed to save CLI config: {e}"));
+            // 5. Build and display the Combined Token
+            let combined_token =
+                Zeroizing::new(CombinedToken::format(&res.access_key_id, &secret_key));
+
+            // Keep the owner config on disk for API/base settings only.
+            if let Err(error) = config.save_default() {
+                persistence_errors.push(format!("failed to persist CLI config: {error}"));
             }
 
-            runtime.print_data(&json!({
-                "profile_name": profile_name,
-                "access_key_id": res.access_key_id,
-                "status": res.status,
-                "public_key": pubkey_hex,
-                "private_key_path": key_path,
-                "bindings": res.bindings,
-                "activated": !no_activate,
-            }))?;
+            runtime.important("╔══════════════════════════════════════════════════════════╗");
+            runtime.important("║  IMPORTANT: Save the Combined Token below immediately!   ║");
+            runtime.important("║  It will NOT be displayed again.                         ║");
+            runtime.important("║  If lost, revoke this key and create a new one.          ║");
+            runtime.important("╚══════════════════════════════════════════════════════════╝");
+
+            runtime.print_data(&AccessKeyCreateOutput {
+                profile_name: &profile_name,
+                access_key_id: &res.access_key_id,
+                status: &res.status,
+                public_key: &pubkey_hex,
+                combined_token: combined_token.as_str(),
+                bindings: &res.bindings,
+                activated: !no_activate,
+            })?;
+
+            if !persistence_errors.is_empty() {
+                anyhow::bail!(
+                    "Access key was created, but local persistence is incomplete: {}. Save the Combined Token above, then fix the local config/registry or revoke and recreate the access key if needed.",
+                    persistence_errors.join("; ")
+                );
+            }
         }
         AccessKeyAction::Get { key_id } => {
             let access_key = client

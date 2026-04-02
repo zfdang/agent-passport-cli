@@ -31,6 +31,17 @@ kitepass wallet import --chain base --name "my-agent-wallet"
 # Create or replace a local agent profile backed by a new access key
 kitepass access-key create --name trading-agent
 
+# Export the one-time Combined Token returned by the create command
+export KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+
+# Submit a transaction using CAIP-2 chain IDs and automatic wallet discovery
+kitepass sign submit \
+  --chain-id eip155:8453 \
+  --payload 0xdeadbeef \
+  --destination 0xabc \
+  --value 10 \
+  --sign-and-submit
+
 # List policies
 kitepass policy list
 
@@ -50,26 +61,38 @@ Kitepass CLI stores:
 
 - owner/session settings in `~/.config/kitepass/config.toml`
 - local agent profiles in `~/.config/kitepass/agents.toml`
-- agent private keys as PEM files under `~/.config/kitepass/keys/`
+- agent private keys as encrypted inline `CryptoEnvelope` records inside `agents.toml`
 
-`agents.toml` supports multiple named profiles. The CLI resolves agent credentials in this order:
+`access-key create` prints a one-time Combined Token:
 
-1. `KITE_AGENT_ACCESS_KEY_ID` + `KITE_AGENT_KEY_PATH`
-2. the profile named by `KITE_PROFILE`
-3. the active profile from `agents.toml`
-4. the `default` profile
+```text
+kite_tk_<access_key_id>_<secret_key>
+```
+
+At runtime, `kitepass sign submit` requires `KITE_AGENT_TOKEN`. The CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `agents.toml`, decrypts the private key locally, and signs the request without depending on any PEM file.
+
+For validation-only requests, the access key resolves in this order:
+
+1. `--access-key-id`
+2. `KITE_AGENT_TOKEN`
+3. the profile named by `KITE_PROFILE`
+4. the active profile from `agents.toml`
+5. the `default` profile
 
 Example:
 
 ```bash
-KITE_PROFILE=trading-agent kitepass sign submit \
-  --wallet-id wal_123 \
+export KITE_AGENT_TOKEN="kite_tk_aak_123_<secret>"
+
+kitepass sign submit \
   --chain-id eip155:8453 \
   --payload 0xdeadbeef \
   --destination 0xabc \
   --value 10 \
   --sign-and-submit
 ```
+
+`chain_id` uses CAIP-2 notation. When `--wallet-id` is omitted, the Gateway auto-selects the correct wallet binding for that chain.
 
 ## Development
 

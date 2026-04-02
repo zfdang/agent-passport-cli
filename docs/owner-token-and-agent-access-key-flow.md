@@ -30,19 +30,21 @@ sequenceDiagram
 
     Owner->>CLI: kitepass access-key create --name trading-bot
     CLI->>CLI: generate Ed25519 keypair locally
-    CLI->>CLI: save private key as local PEM
+    CLI->>CLI: encrypt private key into inline envelope
     CLI->>Gateway: prepare access-key provisioning (Bearer owner token)
     CLI->>Gateway: approve provisioning intent (Bearer owner token)
     CLI->>Gateway: finalize access-key provisioning (Bearer owner token)
     Gateway->>Authz: register delegated authority
     Authz->>Vault: provision policy/key mirror
-    Gateway-->>CLI: access_key_id
-    CLI->>CLI: save profile to agents.toml
+    Gateway-->>CLI: access_key_id + access binding state
+    CLI->>CLI: save encrypted profile to agents.toml
+    CLI-->>Owner: display one-time Combined Token
 
-    Agent->>CLI: request sign operation
+    Agent->>CLI: request sign operation with KITE_AGENT_TOKEN
+    CLI->>CLI: parse token + decrypt inline private key
     CLI->>Gateway: create agent session
     Gateway-->>CLI: session_nonce
-    CLI->>CLI: sign canonical agent intent with local access-key private key
+    CLI->>CLI: sign canonical agent intent with decrypted local access key
     CLI->>Gateway: submit sign request + agent proof
     Gateway->>Authz: validate policy, bindings, limits
     Authz->>Vault: request final signing
@@ -81,9 +83,10 @@ kitepass access-key create --name trading-bot --wallet-id <wallet_id> --policy-i
 During this step, the CLI:
 
 1. generates a new Ed25519 keypair locally
-2. stores the private key locally as a PEM file
+2. derives a random secret and encrypts the private key into an inline `CryptoEnvelope`
 3. sends the public key to Passport using the owner access token
 4. completes the owner-approved provisioning flow
+5. prints a one-time Combined Token for the agent runtime
 
 The important property here is that the **private key never leaves the local machine**. Passport only receives the public key and the owner-approved delegation request.
 
@@ -91,25 +94,27 @@ After provisioning succeeds, the CLI stores the agent identity in:
 
 - `~/.config/kitepass/agents.toml`
 
-That record contains the local profile name, the Passport `access_key_id`, the private key path, and the public key hex.
+That record contains the local profile name, the Passport `access_key_id`, the public key hex, and the encrypted private-key envelope. The Combined Token itself is not stored on disk.
 
 ## Step 3: The Agent Uses the Access Key to Call Passport
 
-At runtime, the agent does not use the owner token. It uses the **local access-key private key**.
+At runtime, the agent does not use the owner token. It uses the **Combined Token plus the local encrypted profile**.
 
 When the agent wants a signature, the CLI:
 
-1. resolves the selected local agent profile
-2. asks Passport to create an agent session
-3. receives a `session_nonce`
-4. builds a canonical sign intent
-5. signs that intent locally with the agent access-key private key
-6. sends the sign request plus the resulting `agent_proof` to Passport
+1. parses `KITE_AGENT_TOKEN` into `access_key_id` + `secret_key`
+2. loads the matching encrypted profile from `agents.toml`
+3. decrypts the local private key in memory
+4. asks Passport to create an agent session
+5. receives a `session_nonce`
+6. builds a canonical sign intent
+7. signs that intent locally with the decrypted access-key private key
+8. sends the sign request plus the resulting `agent_proof` to Passport
 
 Passport then verifies:
 
 - the access key is registered and active
-- the access key is bound to the target wallet
+- the access key is bound to the target wallet selected for the requested CAIP-2 `chain_id`
 - the requested action matches the assigned policy
 - value, destination, and quota limits are still valid
 - the `agent_proof` matches the registered public key
@@ -121,7 +126,7 @@ If all checks pass, the request proceeds through the Policy Authorizer and then 
 This design keeps the two trust levels separate:
 
 - The **owner token** can grant or revoke authority, but it is not meant to be held by an autonomous agent.
-- The **agent access key** can request runtime actions, but only inside the policy boundary approved by the owner.
+- The **Combined Token** can unlock the local encrypted agent key, but only for the specific `access_key_id` that the owner provisioned.
 
 That means an agent can operate continuously without holding the owner's full administrative power.
 
@@ -129,7 +134,7 @@ That means an agent can operate continuously without holding the owner's full ad
 
 In one sentence:
 
-> The owner token is used to create and approve delegated authority, while the agent access key is used to exercise that authority at runtime.
+> The owner token is used to create and approve delegated authority, while the Combined Token unlocks the encrypted local agent key that exercises that authority at runtime.
 
 This gives the system a clean separation between:
 

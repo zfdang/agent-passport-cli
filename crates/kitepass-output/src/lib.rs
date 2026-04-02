@@ -43,9 +43,20 @@ fn render_array(items: &[Value]) -> String {
     }
 
     if items.iter().all(Value::is_object) {
+        let objects = items
+            .iter()
+            .filter_map(Value::as_object)
+            .collect::<Vec<_>>();
+        if objects.len() != items.len() {
+            return items
+                .iter()
+                .map(render_value)
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+
         let mut headers = Vec::new();
-        for item in items {
-            let object = item.as_object().expect("object already checked");
+        for object in &objects {
             for key in object.keys() {
                 if !headers.contains(key) {
                     headers.push(key.clone());
@@ -55,8 +66,7 @@ fn render_array(items: &[Value]) -> String {
 
         let mut builder = Builder::default();
         builder.push_record(headers.iter().map(String::as_str));
-        for item in items {
-            let object = item.as_object().expect("object already checked");
+        for object in objects {
             builder.push_record(
                 headers
                     .iter()

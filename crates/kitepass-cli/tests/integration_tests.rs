@@ -33,7 +33,7 @@ async fn test_login_device_flow() {
         .mount(&mock_server)
         .await;
 
-    let client = PassportClient::new(mock_server.uri());
+    let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
 
     let device_res = client
         .request_device_code(&DeviceCodeRequest::default())
@@ -135,7 +135,9 @@ async fn test_wallet_hybrid_import() {
         .mount(&mock_server)
         .await;
 
-    let client = PassportClient::new(mock_server.uri()).with_token("valid_token".to_string());
+    let client = PassportClient::new(mock_server.uri())
+        .expect("passport client should initialize")
+        .with_token("valid_token".to_string());
 
     let session_res = client
         .create_import_session(
@@ -347,7 +349,9 @@ async fn test_owner_query_surfaces() {
         .mount(&mock_server)
         .await;
 
-    let client = PassportClient::new(mock_server.uri()).with_token("valid_token".to_string());
+    let client = PassportClient::new(mock_server.uri())
+        .expect("passport client should initialize")
+        .with_token("valid_token".to_string());
 
     let wallets = client.list_wallets().await.unwrap();
     assert_eq!(wallets.len(), 1);
@@ -431,7 +435,7 @@ async fn test_agent_signing_surfaces() {
         .mount(&mock_server)
         .await;
 
-    let client = PassportClient::new(mock_server.uri());
+    let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
     let session = client.create_session("aak_123").await.unwrap();
     assert_eq!(session.session_nonce, "nonce_123");
 

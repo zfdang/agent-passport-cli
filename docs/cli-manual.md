@@ -67,12 +67,24 @@ kitepass access-key create \
   --policy-id <POLICY_ID>
 ```
 
-This creates or updates a local agent profile in `~/.config/kitepass/agents.toml` and stores the private key as a PEM file under `~/.config/kitepass/keys/`.
+This creates or updates a local agent profile in `~/.config/kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints a one-time Combined Token:
+
+```text
+KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+```
+
+Important notes:
+
+- the private key is no longer stored as a plaintext PEM file
+- the Combined Token is shown only once, so save it immediately
+- if the token is lost, revoke the access key and create a new one
 
 ### 402: List Local Agent Profiles
 ```bash
 kitepass profile list
 ```
+
+`profile list` shows a safe summary of each profile, including storage mode (`encrypted_inline`) and the envelope algorithm metadata, without printing the encrypted blob itself.
 
 ### 403: Switch the Active Local Agent Profile
 ```bash
@@ -86,9 +98,14 @@ kitepass profile use --name trading-bot
 Agents use their access keys to request signatures via the Passport Gateway.
 
 ### 501: Sign a Transaction
+First export the Combined Token returned by `access-key create`:
+
+```bash
+export KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+```
+
 ```bash
 kitepass sign submit \
-  --wallet-id <WALLET_ID> \
   --signing-type transaction \
   --chain-id "eip155:8453" \
   --destination "0xabc..." \
@@ -97,18 +114,36 @@ kitepass sign submit \
   --sign-and-submit
 ```
 
-If `--access-key-id` and `--key-path` are omitted, the CLI resolves the agent from:
+Key behavior in the new signing flow:
 
-1. `KITE_AGENT_ACCESS_KEY_ID` + `KITE_AGENT_KEY_PATH`
-2. `KITE_PROFILE`
-3. `active_profile` in `agents.toml`
-4. the `default` profile
+- `chain_id` must use CAIP-2 notation, such as `eip155:8453` or `eip155:1`
+- when `--wallet-id` is omitted, the CLI sends `wallet_selector=auto` and the Gateway resolves the correct wallet and policy binding for that chain
+- `kitepass sign submit` requires `KITE_AGENT_TOKEN`; the CLI parses the embedded `access_key_id`, locates the matching encrypted profile in `agents.toml`, decrypts the private key locally, and signs the canonical agent intent
+
+### 502: Validate Routing Without Submitting
+```bash
+kitepass sign validate \
+  --chain-id "eip155:1" \
+  --signing-type transaction \
+  --destination "0xabc..." \
+  --value "1000000000000000" \
+  --payload "0x..."
+```
+
+For `sign validate`, the access key is resolved in this order:
+
+1. `--access-key-id`
+2. `KITE_AGENT_TOKEN`
+3. `KITE_PROFILE`
+4. `active_profile` in `agents.toml`
+5. the `default` profile
 
 ---
 
 ## Troubleshooting
 
 - **Check Logs**: Run with `RUST_LOG=debug` to see detailed network interactions.
+- **Missing Token**: `sign submit` now requires `KITE_AGENT_TOKEN`. If the token is lost, revoke the access key and create a new one.
 - **Config Files**:
   - `~/.config/kitepass/config.toml`
   - `~/.config/kitepass/agents.toml`

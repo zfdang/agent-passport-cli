@@ -1,3 +1,4 @@
+use kitepass_crypto::encryption::CryptoEnvelope;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -6,15 +7,14 @@ use crate::{ConfigError, agents_path, save_toml_secure};
 
 pub const DEFAULT_AGENT_PROFILE: &str = "default";
 pub const AGENT_PROFILE_ENV: &str = "KITE_PROFILE";
-pub const AGENT_ACCESS_KEY_ID_ENV: &str = "KITE_AGENT_ACCESS_KEY_ID";
-pub const AGENT_KEY_PATH_ENV: &str = "KITE_AGENT_KEY_PATH";
+pub const AGENT_TOKEN_ENV: &str = "KITE_AGENT_TOKEN";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentIdentity {
     pub name: String,
     pub access_key_id: String,
-    pub private_key_path: String,
     pub public_key_hex: String,
+    pub encrypted_key: CryptoEnvelope,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -24,10 +24,11 @@ pub struct AgentRegistry {
     pub agents: Vec<AgentIdentity>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentEnvironmentOverride {
-    pub access_key_id: String,
-    pub private_key_path: String,
+/// Returns the Combined Token from `KITE_AGENT_TOKEN` environment variable, if set.
+pub fn env_agent_token() -> Option<String> {
+    std::env::var(AGENT_TOKEN_ENV)
+        .ok()
+        .filter(|value| !value.is_empty())
 }
 
 impl AgentRegistry {
@@ -61,6 +62,12 @@ impl AgentRegistry {
 
     pub fn get(&self, name: &str) -> Option<&AgentIdentity> {
         self.agents.iter().find(|agent| agent.name == name)
+    }
+
+    pub fn get_by_access_key_id(&self, access_key_id: &str) -> Option<&AgentIdentity> {
+        self.agents
+            .iter()
+            .find(|agent| agent.access_key_id == access_key_id)
     }
 
     pub fn upsert(&mut self, agent: AgentIdentity) -> Result<(), ConfigError> {
@@ -114,23 +121,6 @@ pub fn load_agent_registry_default() -> Result<AgentRegistry, ConfigError> {
     AgentRegistry::load_default()
 }
 
-pub fn env_agent_override() -> Result<Option<AgentEnvironmentOverride>, ConfigError> {
-    let access_key_id = std::env::var(AGENT_ACCESS_KEY_ID_ENV)
-        .ok()
-        .filter(|value| !value.is_empty());
-    let private_key_path = std::env::var(AGENT_KEY_PATH_ENV)
-        .ok()
-        .filter(|value| !value.is_empty());
-    match (access_key_id, private_key_path) {
-        (Some(access_key_id), Some(private_key_path)) => Ok(Some(AgentEnvironmentOverride {
-            access_key_id,
-            private_key_path,
-        })),
-        (None, None) => Ok(None),
-        _ => Err(ConfigError::IncompleteAgentEnvironmentOverride),
-    }
-}
-
 pub fn validate_profile_name(name: &str) -> Result<(), ConfigError> {
     if name.trim().is_empty() {
         return Err(ConfigError::InvalidProfileName(
@@ -148,7 +138,12 @@ pub fn validate_profile_name(name: &str) -> Result<(), ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kitepass_crypto::encryption::CryptoEnvelope;
     use tempfile::tempdir;
+
+    fn test_envelope() -> CryptoEnvelope {
+        CryptoEnvelope::encrypt(b"test-key-data", "test_secret").unwrap()
+    }
 
     #[test]
     fn registry_round_trip_persists_agents_and_active_profile() {
@@ -159,8 +154,8 @@ mod tests {
             .upsert(AgentIdentity {
                 name: "default".to_string(),
                 access_key_id: "aak_123".to_string(),
-                private_key_path: "/tmp/default.pem".to_string(),
                 public_key_hex: "abc".to_string(),
+                encrypted_key: test_envelope(),
             })
             .unwrap();
         registry.active_profile = Some("default".to_string());
@@ -180,14 +175,14 @@ mod tests {
                 AgentIdentity {
                     name: "default".to_string(),
                     access_key_id: "aak_default".to_string(),
-                    private_key_path: "/tmp/default.pem".to_string(),
                     public_key_hex: "abc".to_string(),
+                    encrypted_key: test_envelope(),
                 },
                 AgentIdentity {
                     name: "bot".to_string(),
                     access_key_id: "aak_bot".to_string(),
-                    private_key_path: "/tmp/bot.pem".to_string(),
                     public_key_hex: "def".to_string(),
+                    encrypted_key: test_envelope(),
                 },
             ],
         };
@@ -197,19 +192,11 @@ mod tests {
     }
 
     #[test]
-    fn env_override_requires_both_fields() {
+    fn env_agent_token_returns_none_when_unset() {
         unsafe {
-            std::env::set_var(AGENT_ACCESS_KEY_ID_ENV, "aak_env");
-            std::env::remove_var(AGENT_KEY_PATH_ENV);
+            std::env::remove_var(AGENT_TOKEN_ENV);
         }
-        let err = env_agent_override().unwrap_err();
-        assert!(matches!(
-            err,
-            ConfigError::IncompleteAgentEnvironmentOverride
-        ));
-        unsafe {
-            std::env::remove_var(AGENT_ACCESS_KEY_ID_ENV);
-        }
+        assert!(env_agent_token().is_none());
     }
 
     #[test]

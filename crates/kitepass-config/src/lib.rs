@@ -6,9 +6,8 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub use agents::{
-    AGENT_ACCESS_KEY_ID_ENV, AGENT_KEY_PATH_ENV, AGENT_PROFILE_ENV, AgentEnvironmentOverride,
-    AgentIdentity, AgentRegistry, DEFAULT_AGENT_PROFILE, env_agent_override,
-    load_agent_registry_default, validate_profile_name,
+    AGENT_PROFILE_ENV, AGENT_TOKEN_ENV, AgentIdentity, AgentRegistry, DEFAULT_AGENT_PROFILE,
+    env_agent_token, load_agent_registry_default, validate_profile_name,
 };
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
@@ -25,10 +24,8 @@ pub enum ConfigError {
     ProfileNotFound(String),
     #[error("invalid profile name: {0}")]
     InvalidProfileName(String),
-    #[error(
-        "{AGENT_ACCESS_KEY_ID_ENV} and {AGENT_KEY_PATH_ENV} must either both be set or both be unset"
-    )]
-    IncompleteAgentEnvironmentOverride,
+    #[error("invalid Combined Token format: expected kite_tk_<access_key_id>_<secret_key>")]
+    InvalidToken,
 }
 
 /// Local CLI configuration.

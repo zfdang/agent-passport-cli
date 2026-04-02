@@ -1,17 +1,18 @@
-use crate::{cli::AuditAction, error::CliError, runtime::Runtime};
+use crate::{cli::AuditAction, commands::load_cli_config, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
 use kitepass_api_client::PassportClient;
-use kitepass_config::CliConfig;
 
 pub async fn run(action: AuditAction, runtime: &Runtime) -> Result<()> {
-    let config = CliConfig::load_default().unwrap_or_default();
+    let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
         .access_token
         .clone()
         .ok_or(CliError::AuthenticationRequired)?;
 
-    let client = PassportClient::new(api_url).with_token(token);
+    let client = PassportClient::new(api_url)
+        .context("Failed to initialize Passport API client")?
+        .with_token(token);
 
     match action {
         AuditAction::List { wallet_id } => {

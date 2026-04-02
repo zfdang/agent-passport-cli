@@ -212,7 +212,7 @@ pub enum SignAction {
     /// Validate a sign intent (dry run)
     Validate {
         #[arg(long)]
-        access_key_id: String,
+        access_key_id: Option<String>,
         #[arg(long)]
         wallet_id: Option<String>,
         #[arg(long, default_value = "auto")]
@@ -246,8 +246,6 @@ pub enum SignAction {
         destination: String,
         #[arg(long, default_value = "0")]
         value: String,
-        #[arg(long)]
-        key_path: Option<String>,
         #[arg(long, default_value_t = false)]
         sign_and_submit: bool,
     },

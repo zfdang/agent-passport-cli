@@ -1,12 +1,16 @@
 use assert_cmd::Command;
 use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig};
 use kitepass_crypto::agent_key::AgentKey;
+use kitepass_crypto::encryption::{CombinedToken, CryptoEnvelope};
 use kitepass_crypto::hpke::{IMPORT_ENCRYPTION_SCHEME, generate_recipient_keypair};
 use predicates::str::contains;
 use std::fs;
 use tempfile::TempDir;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+const TEST_COMBINED_SECRET: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn config_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
     [
@@ -44,39 +48,51 @@ fn write_config(tempdir: &TempDir, api_url: Option<&str>, access_token: Option<&
     }
 }
 
-fn load_saved_config(tempdir: &TempDir) -> CliConfig {
-    let mut first = None;
-    for path in config_paths(tempdir) {
-        if path.exists() {
-            let config = CliConfig::load(&path).expect("config should load");
-            if config.access_token.is_some() {
-                return config;
-            }
-            first = Some(config);
-        }
-    }
+fn newest_existing_path(
+    paths: impl IntoIterator<Item = std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    paths
+        .into_iter()
+        .filter(|path| path.exists())
+        .max_by_key(|path| {
+            fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        })
+}
 
-    first.expect("expected CLI config to exist")
+fn load_saved_config(tempdir: &TempDir) -> CliConfig {
+    let path = newest_existing_path(config_paths(tempdir)).expect("expected CLI config to exist");
+    CliConfig::load(&path).expect("config should load")
 }
 
 fn load_saved_agents(tempdir: &TempDir) -> AgentRegistry {
-    let mut first = None;
-    for path in agents_paths(tempdir) {
-        if path.exists() {
-            let registry = AgentRegistry::load(&path).expect("agent registry should load");
-            if !registry.agents.is_empty() {
-                return registry;
-            }
-            first = Some(registry);
-        }
-    }
-    first.unwrap_or_default()
+    let Some(path) = newest_existing_path(agents_paths(tempdir)) else {
+        return AgentRegistry::default();
+    };
+    AgentRegistry::load(&path).expect("agent registry should load")
 }
 
 fn write_agents(tempdir: &TempDir, registry: &AgentRegistry) {
     for path in agents_paths(tempdir) {
         registry.save(&path).expect("agent registry should save");
     }
+}
+
+fn encrypted_identity_from_key(name: &str, access_key_id: &str, key: &AgentKey) -> AgentIdentity {
+    let pem = key.export_pem().expect("key should export");
+    AgentIdentity {
+        name: name.to_string(),
+        access_key_id: access_key_id.to_string(),
+        public_key_hex: key.public_key_hex(),
+        encrypted_key: CryptoEnvelope::encrypt(pem.as_bytes(), TEST_COMBINED_SECRET)
+            .expect("key should encrypt"),
+    }
+}
+
+fn encrypted_identity(name: &str, access_key_id: &str) -> AgentIdentity {
+    let key = AgentKey::generate();
+    encrypted_identity_from_key(name, access_key_id, &key)
 }
 
 fn cli_command(tempdir: &TempDir) -> Command {
@@ -130,7 +146,7 @@ fn access_key_create_dry_run_emits_json_without_writing_keys() {
 }
 
 #[tokio::test]
-async fn access_key_create_emits_clean_json_and_writes_key_file() {
+async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
@@ -185,18 +201,21 @@ async fn access_key_create_emits_clean_json_and_writes_key_file() {
         .assert()
         .success()
         .stdout(contains("\"access_key_id\": \"aak_123\""))
-        .stdout(contains("\"private_key_path\":"));
+        .stdout(contains("\"combined_token\": \"kite_tk_aak_123_"))
+        .stderr(contains(
+            "IMPORTANT: Save the Combined Token below immediately!",
+        ));
 
     assert!(
-        tempdir
+        !tempdir
             .path()
             .join("Library")
             .join("Application Support")
             .join("kitepass")
             .join("keys")
             .exists()
-            || tempdir.path().join("kitepass").join("keys").exists(),
-        "access-key create should persist the generated private key"
+            && !tempdir.path().join("kitepass").join("keys").exists(),
+        "access-key create should no longer persist PEM key files"
     );
 
     let registry = load_saved_agents(&tempdir);
@@ -204,6 +223,8 @@ async fn access_key_create_emits_clean_json_and_writes_key_file() {
     assert_eq!(registry.agents.len(), 1);
     assert_eq!(registry.agents[0].name, "worker-key");
     assert_eq!(registry.agents[0].access_key_id, "aak_123");
+    assert_eq!(registry.agents[0].encrypted_key.cipher, "aes-256-gcm");
+    assert_eq!(registry.agents[0].encrypted_key.kdf, "hkdf-sha256");
 }
 
 #[tokio::test]
@@ -423,6 +444,7 @@ async fn sign_validate_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
+    let combined_token = CombinedToken::format("aak_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -444,12 +466,11 @@ async fn sign_validate_renders_json_output() {
         .await;
 
     cli_command(&tempdir)
+        .env("KITE_AGENT_TOKEN", &combined_token)
         .args([
             "--json",
             "sign",
             "validate",
-            "--access-key-id",
-            "aak_123",
             "--wallet-id",
             "wal_123",
             "--chain-id",
@@ -467,6 +488,37 @@ async fn sign_validate_renders_json_output() {
         .success()
         .stdout(contains("\"valid\": true"))
         .stdout(contains("\"resolved_wallet_id\": \"wal_123\""));
+
+    let requests = mock_server
+        .received_requests()
+        .await
+        .expect("wiremock should record requests");
+    let validate_req = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/sign-intents/validate")
+        .expect("validate request should be present");
+    let validate_body: serde_json::Value =
+        serde_json::from_slice(&validate_req.body).expect("validate body should be json");
+
+    assert_eq!(validate_body["access_key_id"], "aak_123");
+}
+
+#[test]
+fn sign_submit_requires_combined_token() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+
+    cli_command(&tempdir)
+        .args([
+            "sign",
+            "submit",
+            "--chain-id",
+            "eip155:8453",
+            "--payload",
+            "0xdeadbeef",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("requires KITE_AGENT_TOKEN"));
 }
 
 #[tokio::test]
@@ -1055,9 +1107,14 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
     write_config(&tempdir, Some(&mock_server.uri()), None);
 
     let key = AgentKey::generate();
-    let pem = key.export_pem().expect("key should export");
-    let key_path = tempdir.path().join("agent.pem");
-    fs::write(&key_path, pem).expect("key should write");
+    write_agents(
+        &tempdir,
+        &AgentRegistry {
+            active_profile: Some("default".to_string()),
+            agents: vec![encrypted_identity_from_key("default", "aak_123", &key)],
+        },
+    );
+    let combined_token = CombinedToken::format("aak_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1102,6 +1159,7 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
         .await;
 
     cli_command(&tempdir)
+        .env("KITE_AGENT_TOKEN", &combined_token)
         .args([
             "--json",
             "sign",
@@ -1120,8 +1178,6 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
             "0xabc",
             "--value",
             "10",
-            "--key-path",
-            key_path.to_str().expect("key path should be utf-8"),
             "--sign-and-submit",
         ])
         .assert()
@@ -1176,18 +1232,8 @@ fn profile_list_use_and_delete_manage_local_registry() {
         &AgentRegistry {
             active_profile: Some("default".to_string()),
             agents: vec![
-                AgentIdentity {
-                    name: "default".to_string(),
-                    access_key_id: "aak_default".to_string(),
-                    private_key_path: "/tmp/default.pem".to_string(),
-                    public_key_hex: "abc".to_string(),
-                },
-                AgentIdentity {
-                    name: "trading_bot".to_string(),
-                    access_key_id: "aak_bot".to_string(),
-                    private_key_path: "/tmp/bot.pem".to_string(),
-                    public_key_hex: "def".to_string(),
-                },
+                encrypted_identity("default", "aak_default"),
+                encrypted_identity("trading_bot", "aak_bot"),
             ],
         },
     );
@@ -1197,7 +1243,9 @@ fn profile_list_use_and_delete_manage_local_registry() {
         .assert()
         .success()
         .stdout(contains("\"active_profile\": \"default\""))
-        .stdout(contains("\"name\": \"trading_bot\""));
+        .stdout(contains("\"name\": \"trading_bot\""))
+        .stdout(contains("\"private_key_storage\": \"encrypted_inline\""))
+        .stdout(contains("\"encryption_cipher\": \"aes-256-gcm\""));
 
     cli_command(&tempdir)
         .args(["--json", "profile", "use", "--name", "trading_bot"])
@@ -1221,47 +1269,25 @@ fn profile_list_use_and_delete_manage_local_registry() {
 }
 
 #[tokio::test]
-async fn sign_submit_uses_selected_profile_when_flags_are_omitted() {
+async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
 
     let default_key = AgentKey::generate();
-    let default_path = tempdir.path().join("default.pem");
-    fs::write(
-        &default_path,
-        default_key.export_pem().expect("default key should export"),
-    )
-    .expect("default key should write");
-
     let bot_key = AgentKey::generate();
-    let bot_path = tempdir.path().join("trading_bot.pem");
-    fs::write(
-        &bot_path,
-        bot_key.export_pem().expect("bot key should export"),
-    )
-    .expect("bot key should write");
 
     write_agents(
         &tempdir,
         &AgentRegistry {
             active_profile: Some("default".to_string()),
             agents: vec![
-                AgentIdentity {
-                    name: "default".to_string(),
-                    access_key_id: "aak_default".to_string(),
-                    private_key_path: default_path.to_string_lossy().to_string(),
-                    public_key_hex: default_key.public_key_hex(),
-                },
-                AgentIdentity {
-                    name: "trading_bot".to_string(),
-                    access_key_id: "aak_bot".to_string(),
-                    private_key_path: bot_path.to_string_lossy().to_string(),
-                    public_key_hex: bot_key.public_key_hex(),
-                },
+                encrypted_identity_from_key("default", "aak_default", &default_key),
+                encrypted_identity_from_key("trading_bot", "aak_bot", &bot_key),
             ],
         },
     );
+    let combined_token = CombinedToken::format("aak_bot", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1306,7 +1332,8 @@ async fn sign_submit_uses_selected_profile_when_flags_are_omitted() {
         .await;
 
     cli_command(&tempdir)
-        .env("KITE_PROFILE", "trading_bot")
+        .env("KITE_PROFILE", "default")
+        .env("KITE_AGENT_TOKEN", &combined_token)
         .args([
             "--json",
             "sign",

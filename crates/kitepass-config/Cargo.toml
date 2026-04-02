@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+kitepass-crypto.workspace = true
 serde.workspace = true
 toml.workspace = true
 dirs.workspace = true

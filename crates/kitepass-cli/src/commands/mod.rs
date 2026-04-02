@@ -11,6 +11,15 @@ pub mod wallet_import;
 use crate::cli::{Cli, Command};
 use crate::runtime::Runtime;
 use anyhow::Result;
+use kitepass_config::{AgentRegistry, CliConfig};
+
+pub(crate) fn load_cli_config() -> Result<CliConfig> {
+    Ok(CliConfig::load_default()?)
+}
+
+pub(crate) fn load_agent_registry() -> Result<AgentRegistry> {
+    Ok(AgentRegistry::load_default()?)
+}
 
 pub async fn dispatch(cli: Cli) -> Result<()> {
     let runtime = Runtime::from_cli(&cli);
