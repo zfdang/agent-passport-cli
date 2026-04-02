@@ -180,7 +180,7 @@ async fn test_wallet_hybrid_import() {
         &attestation.import_public_key,
         &info,
         &aad_bytes,
-        b"my_secret_mnemonic",
+        b"4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7",
     )
     .unwrap();
 

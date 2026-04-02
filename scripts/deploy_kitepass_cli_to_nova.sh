@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 NOVA_HOST="${NOVA_HOST:-nova}"
-REMOTE_CLI_DIR="${NOVA_REMOTE_CLI_DIR:-/home/ubuntu/codex/kitepass-cli}"
+REMOTE_CLI_DIR="${NOVA_REMOTE_CLI_DIR:-/home/ubuntu/codex/agent-passport-cli}"
 REMOTE_INSTALL_DIR="${NOVA_REMOTE_INSTALL_DIR:-/home/ubuntu/.local/bin}"
 
 require_cmd() {

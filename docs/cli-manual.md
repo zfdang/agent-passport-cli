@@ -19,9 +19,10 @@ This will open a browser to perform a passkey-based authentication.
 ### 201: Import an Existing Wallet
 To import a wallet (e.g., from an EOA private key) into the TEE:
 ```bash
-kitepass wallet import --chain base --name "MyTradingWallet"
+printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
+  kitepass wallet import --chain evm --name "MyTradingWallet"
 ```
-*Note: The CLI will prompt for the private key securely. The key is encrypted via HPKE before leaving your local machine and can only be decrypted inside the TEE.*
+*Note: The current wallet-import path accepts EVM private keys in hex form. The key is encrypted via HPKE before leaving your local machine, normalized to a raw 32-byte secp256k1 key inside the TEE, and then sealed for storage.*
 
 ### 202: List Wallets
 ```bash

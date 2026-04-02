@@ -1,7 +1,7 @@
 use crate::commands::load_cli_config;
 use crate::commands::wallet_import::{build_import_hpke_info, verify_import_attestation};
 use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use kitepass_api_client::{ImportAad, PassportClient, UploadWalletCiphertextRequest};
 use kitepass_crypto::hpke::seal_to_hex;
 use serde_json::json;
@@ -31,20 +31,28 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
         }
         WalletAction::Import { chain, name } => {
             if runtime.dry_run_enabled() {
+                let chain_family = normalize_wallet_chain_family(&chain)?;
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "wallet.import",
-                    "chain_family": chain,
+                    "chain_family": chain_family,
                     "label": name,
                 }))?;
                 return Ok(());
             }
 
-            runtime.progress(format!("Starting hybrid wallet import for chain: {chain}"));
+            let chain_family = normalize_wallet_chain_family(&chain)?;
+            runtime.progress(format!(
+                "Starting hybrid wallet import for chain family: {chain_family}"
+            ));
 
             // 1. Fetch import session
             let session_res = client
-                .create_import_session(&chain, name, format!("idem_{}", Uuid::new_v4().simple()))
+                .create_import_session(
+                    chain_family,
+                    name,
+                    format!("idem_{}", Uuid::new_v4().simple()),
+                )
                 .await
                 .context("Failed to create import session")?;
 
@@ -71,7 +79,7 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 spawn_blocking(|| -> Result<Zeroizing<String>> {
                     Ok(Zeroizing::new(
                         dialoguer::Password::new()
-                            .with_prompt("Enter Wallet Mnemonic or Hex Private Key")
+                            .with_prompt("Enter EVM Hex Private Key")
                             .interact()
                             .context("Failed to read wallet secret")?,
                     ))
@@ -168,4 +176,11 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn normalize_wallet_chain_family(value: &str) -> Result<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "evm" | "eip155" | "base" => Ok("evm"),
+        other => bail!("wallet import currently supports the evm chain family only, got `{other}`"),
+    }
 }

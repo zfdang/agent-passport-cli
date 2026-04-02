@@ -1048,7 +1048,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
             "--name",
             "test-wallet",
         ])
-        .write_stdin("my_secret_mnemonic\n")
+        .write_stdin("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n")
         .assert()
         .success()
         .stdout(contains("\"operation_id\": \"op_123\""))
@@ -1072,7 +1072,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
     let upload_body: serde_json::Value =
         serde_json::from_slice(&upload_req.body).expect("upload body should be json");
 
-    assert_eq!(session_body["chain_family"], "base");
+    assert_eq!(session_body["chain_family"], "evm");
     assert_eq!(session_body["label"], "test-wallet");
     assert_eq!(upload_body["vault_signer_instance_id"], "vs_dev_1");
     assert_eq!(upload_body["aad"]["owner_id"], "own_dev");

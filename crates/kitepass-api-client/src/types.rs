@@ -181,15 +181,6 @@ pub struct BindingInput {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct CreateBindingRequest {
-    pub wallet_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
-    pub is_default: bool,
-    pub selection_priority: u32,
-}
-
-#[derive(Serialize, Debug, Clone)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum WalletMutationRequest {
     Freeze,

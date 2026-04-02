@@ -25,8 +25,9 @@ curl -fsSL https://raw.githubusercontent.com/zfdang/agent-passport-cli/main/scri
 # Login as wallet owner
 kitepass login
 
-# Import a wallet
-kitepass wallet import --chain base --name "my-agent-wallet"
+# Import an EVM wallet from a hex private key
+printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
+  kitepass wallet import --chain evm --name "my-agent-wallet"
 
 # Create or replace a local agent profile backed by a new access key
 kitepass access-key create --name trading-agent
@@ -93,6 +94,8 @@ kitepass sign submit \
 ```
 
 `chain_id` uses CAIP-2 notation. When `--wallet-id` is omitted, the Gateway auto-selects the correct wallet binding for that chain.
+
+`wallet import` currently accepts EVM private keys in hex form. The Gateway/Vault Signer path canonicalizes `base`, `eip155`, and `evm` to the same EVM chain family before sealing the normalized 32-byte key inside the TEE.
 
 ## Development
 

@@ -1,6 +1,6 @@
 # Security: Secure Wallet Import Protocol
 
-One of the core value propositions of Agent Passport is the ability to import existing wallet secrets (private keys) into a **Trusted Execution Environment (TEE)** without exposing them to the Passport Gateway or any intermediate infrastructure.
+One of the core value propositions of Agent Passport is the ability to import existing wallet secrets (currently EVM private keys in hex form) into a **Trusted Execution Environment (TEE)** without exposing them to the Passport Gateway or any intermediate infrastructure.
 
 ## How it Works
 
@@ -21,7 +21,7 @@ The TEE generates an ephemeral X25519 public key and includes it in the signed a
 ### 3. End-to-End Encryption
 The encrypted blob (ciphertext) is sent to the Passport Gateway and then forwarded to the Vault Signer.
 - **Gateway as a Relayer**: The Gateway cannot decrypt the secret because it does not possess the TEE's private keys.
-- **Decryption in TEE**: The Vault Signer TEE receives the ciphertext, verifies the AAD, and uses its Secure Enclave hardware to decrypt and seal the secret to its own internal storage.
+- **Decryption in TEE**: The Vault Signer TEE receives the ciphertext, verifies the AAD, validates that the imported secret is a supported EVM private key, normalizes it to raw 32-byte secp256k1 bytes, and then seals it to its own internal storage.
 
 ## Why it is Secure
 
