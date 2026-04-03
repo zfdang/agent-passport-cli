@@ -94,6 +94,7 @@ jobs:
         run: cargo zigbuild --locked --release --target ${{ matrix.target }} -p kitepass-cli --bin kitepass
 
       - name: Generate build provenance attestation
+        if: ${{ !github.event.repository.private || github.event.repository.owner.type == 'Organization' }}
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: target/${{ matrix.target }}/release/kitepass
