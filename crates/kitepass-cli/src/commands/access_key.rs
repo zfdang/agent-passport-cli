@@ -203,36 +203,27 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 );
             }
         }
-        AccessKeyAction::Get { key_id } => {
+        AccessKeyAction::Get { access_key_id } => {
             let access_key = client
-                .get_access_key(&key_id)
+                .get_access_key(&access_key_id)
                 .await
-                .with_context(|| format!("Failed to get access key {key_id}"))?;
+                .with_context(|| format!("Failed to get access key {access_key_id}"))?;
             let bindings = client
-                .list_bindings(&key_id)
+                .list_bindings(&access_key_id)
                 .await
-                .with_context(|| format!("Failed to list bindings for access key {key_id}"))?;
+                .with_context(|| format!("Failed to list bindings for access key {access_key_id}"))?;
             let usage = client
-                .get_access_key_usage(&key_id)
+                .get_access_key_usage(&access_key_id)
                 .await
-                .with_context(|| format!("Failed to get usage for access key {key_id}"))?;
+                .with_context(|| format!("Failed to get usage for access key {access_key_id}"))?;
             runtime.print_data(&serde_json::json!({
                 "access_key": access_key,
                 "bindings": bindings,
                 "usage": usage,
             }))?;
         }
-        AccessKeyAction::Bind {
-            key_id,
-            wallet_id,
-            policy_id,
-        } => {
-            let _ = (key_id, wallet_id, policy_id);
-            anyhow::bail!(
-                "Direct binding expansion is disabled. Create a new access key with `--wallet-id` and `--policy-id` so the delegated authority can go through owner-approved provisioning."
-            );
-        }
-        AccessKeyAction::Freeze { key_id } => {
+        AccessKeyAction::Freeze { access_key_id } => {
+            let key_id = access_key_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
@@ -247,7 +238,8 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 .with_context(|| format!("Failed to freeze access key {key_id}"))?;
             runtime.print_data(&access_key)?;
         }
-        AccessKeyAction::Revoke { key_id } => {
+        AccessKeyAction::Revoke { access_key_id } => {
+            let key_id = access_key_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,

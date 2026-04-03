@@ -71,7 +71,7 @@ Security properties:
 
 ## Signing Flow
 
-For `kitepass sign submit`, the runtime flow is:
+For `kitepass sign`, the runtime flow is:
 
 1. read `KITE_AGENT_TOKEN`
 2. parse `access_key_id` and `secret_key`
@@ -88,7 +88,7 @@ The Gateway only receives:
 
 It never receives the decrypted private key.
 
-`kitepass sign validate` is slightly broader: it can run either with `KITE_AGENT_TOKEN` or with a logged-in owner session. That owner path is intended for debugging and route validation, not as the final runtime signing credential.
+`kitepass sign --validate` is slightly broader: it can run either with `KITE_AGENT_TOKEN` or with a logged-in owner session. That owner path is intended for debugging and route validation, not as the final runtime signing credential.
 
 ## CAIP-2 and Multi-Chain Routing
 

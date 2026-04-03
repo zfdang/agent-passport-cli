@@ -25,9 +25,7 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
             runtime.print_data(&policies)?;
         }
         PolicyAction::Create {
-            name,
             wallet_id,
-            access_key_id,
             allowed_chains,
             allowed_actions,
             max_single_amount,
@@ -39,9 +37,7 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "policy.create",
-                    "name": name,
                     "wallet_id": wallet_id,
-                    "access_key_id": access_key_id,
                     "allowed_chains": allowed_chains,
                     "allowed_actions": allowed_actions,
                     "max_single_amount": max_single_amount,
@@ -52,9 +48,6 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
                 return Ok(());
             }
 
-            // Policy name is used in dry-run output above; the Gateway API
-            // does not accept a name field yet, so we intentionally drop it here.
-            drop(name);
             if valid_for_hours <= 0 {
                 anyhow::bail!("--valid-for-hours must be a positive integer");
             }
@@ -63,7 +56,7 @@ pub async fn run(action: PolicyAction, runtime: &Runtime) -> Result<()> {
                 .create_policy(&CreatePolicyRequest {
                     binding_id: None,
                     wallet_id,
-                    access_key_id,
+                    access_key_id: None,
                     allowed_chains,
                     allowed_actions,
                     max_single_amount,

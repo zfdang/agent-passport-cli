@@ -30,7 +30,33 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         Command::AccessKey { action } => access_key::run(action, &runtime).await,
         Command::Policy { action } => policy::run(action, &runtime).await,
         Command::Profile { action } => profile::run(action, &runtime).await,
-        Command::Sign { action } => sign::run(action, &runtime).await,
+        Command::Sign {
+            validate,
+            broadcast,
+            access_key_id,
+            wallet_id,
+            chain_id,
+            signing_type,
+            payload,
+            destination,
+            value,
+        } => {
+            sign::run(
+                sign::SignArgs {
+                    validate,
+                    broadcast,
+                    access_key_id,
+                    wallet_id,
+                    chain_id,
+                    signing_type,
+                    payload,
+                    destination,
+                    value,
+                },
+                &runtime,
+            )
+            .await
+        }
         Command::Audit { action } => audit::run(action, &runtime).await,
         Command::Operations { action } => operations::run(action, &runtime).await,
     }

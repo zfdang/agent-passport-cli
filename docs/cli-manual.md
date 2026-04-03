@@ -35,7 +35,7 @@ Wallet import is an owner action. The CLI verifies the Vault Signer attestation,
 
 ```bash
 printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
-  kitepass --json wallet import --chain evm --name "MyTradingWallet"
+  kitepass --json wallet import --chain-family evm --name "MyTradingWallet"
 ```
 
 Useful follow-up commands:
@@ -58,13 +58,12 @@ The current provisioning flow is policy-first:
 2. activate that policy
 3. create a bound runtime access key attached to the wallet and policy
 
-This sequence is the most reliable way to reach a successful `sign submit` today.
+This sequence is the most reliable way to reach a successful runtime signing flow today.
 
 ### 4.1 Create And Activate A Policy
 
 ```bash
 kitepass --json policy create \
-  --name trading-policy \
   --wallet-id <wallet-id> \
   --allowed-chain eip155:8453 \
   --allowed-action transaction \
@@ -98,7 +97,7 @@ Important notes:
 - the private key is not stored as plaintext PEM
 - the Combined Token is shown only once
 - if the token is lost, revoke the key and mint a new one
-- `access-key bind` is intentionally disabled; create a new bound key instead
+- there is no post-creation bind command; create a new bound key instead
 
 ## 5. Local Profiles
 
@@ -133,7 +132,7 @@ export KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
 ### 6.1 Validate Routing And Policy
 
 ```bash
-kitepass --json sign validate \
+kitepass --json sign --validate \
   --access-key-id <access-key-id> \
   --wallet-id <wallet-id> \
   --chain-id eip155:8453 \
@@ -143,33 +142,49 @@ kitepass --json sign validate \
   --value 10
 ```
 
-`sign validate` can be used either:
+`kitepass sign --validate` can be used either:
 
 - as an owner-facing diagnostic command after `kitepass login`
 - or as an agent-facing proof flow when `KITE_AGENT_TOKEN` is present
 
-### 6.2 Submit The Signing Request
+### 6.2 Sign Without Broadcasting
 
 ```bash
 KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
-  kitepass --json sign submit \
+  kitepass --json sign \
     --access-key-id <access-key-id> \
     --wallet-id <wallet-id> \
     --chain-id eip155:8453 \
     --signing-type transaction \
     --payload 0xdeadbeef \
     --destination 0xabc \
-    --value 10 \
-    --sign-and-submit
+    --value 10
 ```
 
 Key behavior:
 
 - `chain_id` uses CAIP-2 notation, such as `eip155:8453`
-- `sign submit` requires `KITE_AGENT_TOKEN`
-- `sign submit` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
+- `kitepass sign` requires `KITE_AGENT_TOKEN`
+- `kitepass sign` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
 - the CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
-- the Gateway then validates agent proof, policy state, wallet binding, and limits before forwarding to the signer path
+- the Gateway then validates agent proof, policy state, wallet binding, and limits before returning the final signature
+
+### 6.3 Sign And Broadcast
+
+```bash
+KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+  kitepass --json sign \
+    --broadcast \
+    --access-key-id <access-key-id> \
+    --wallet-id <wallet-id> \
+    --chain-id eip155:8453 \
+    --signing-type transaction \
+    --payload 0xdeadbeef \
+    --destination 0xabc \
+    --value 10
+```
+
+When `--broadcast` is present, Passport forwards the signed transaction to the relayer and returns an `operation_id`.
 
 ## 7. Operation And Audit Checks
 
@@ -195,7 +210,7 @@ Kitepass CLI stores state in `~/.kitepass/`:
 ## 9. Troubleshooting
 
 - **Missing Combined Token**
-  - `sign submit` fails by design without `KITE_AGENT_TOKEN`
+  - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_AGENT_TOKEN`
 - **No local encrypted profile**
   - the access key was created on another machine, or `agents.toml` is missing
 - **Policy creation order**

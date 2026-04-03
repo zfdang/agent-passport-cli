@@ -424,7 +424,7 @@ async fn operations_get_renders_json_output() {
 }
 
 #[tokio::test]
-async fn sign_validate_renders_json_output() {
+async fn sign_validate_mode_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
@@ -462,7 +462,7 @@ async fn sign_validate_renders_json_output() {
         .args([
             "--json",
             "sign",
-            "validate",
+            "--validate",
             "--wallet-id",
             "wal_123",
             "--chain-id",
@@ -500,13 +500,12 @@ async fn sign_validate_renders_json_output() {
 }
 
 #[test]
-fn sign_submit_requires_combined_token() {
+fn sign_requires_combined_token() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
 
     cli_command(&tempdir)
         .args([
             "sign",
-            "submit",
             "--chain-id",
             "eip155:8453",
             "--payload",
@@ -619,7 +618,7 @@ async fn access_key_get_renders_json_output_with_bindings_and_usage() {
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "access-key", "get", "--key-id", "aak_123"])
+        .args(["--json", "access-key", "get", "--access-key-id", "aak_123"])
         .assert()
         .success()
         .stdout(contains("\"access_key_id\": \"aak_123\""))
@@ -671,7 +670,7 @@ async fn access_key_freeze_and_revoke_render_json_output() {
             "--json",
             "access-key",
             "freeze",
-            "--key-id",
+            "--access-key-id",
             "aak_freeze_123",
         ])
         .assert()
@@ -684,7 +683,7 @@ async fn access_key_freeze_and_revoke_render_json_output() {
             "--json",
             "access-key",
             "revoke",
-            "--key-id",
+            "--access-key-id",
             "aak_revoke_123",
         ])
         .assert()
@@ -704,9 +703,9 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
         .and(header("authorization", "Bearer owner-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "policy_id": "pol_create_123",
-            "binding_id": "bind_create_123",
+            "binding_id": "",
             "wallet_id": "wal_123",
-            "access_key_id": "aak_123",
+            "access_key_id": "",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -725,12 +724,8 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
             "--json",
             "policy",
             "create",
-            "--name",
-            "daily-policy",
             "--wallet-id",
             "wal_123",
-            "--access-key-id",
-            "aak_123",
             "--allowed-chain",
             "eip155:8453",
             "--allowed-action",
@@ -756,14 +751,14 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
     assert_eq!(body["wallet_id"], "wal_123");
-    assert_eq!(body["access_key_id"], "aak_123");
+    assert!(body.get("access_key_id").is_none() || body["access_key_id"].is_null());
     assert_eq!(body["allowed_chains"][0], "eip155:8453");
     assert_eq!(body["allowed_actions"][0], "transaction");
     assert_eq!(body["allowed_destinations"][0], "0xabc");
 }
 
 #[tokio::test]
-async fn policy_create_omits_access_key_id_when_not_provided() {
+async fn policy_create_uses_policy_first_payload() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
@@ -794,8 +789,6 @@ async fn policy_create_omits_access_key_id_when_not_provided() {
             "--json",
             "policy",
             "create",
-            "--name",
-            "policy-first",
             "--wallet-id",
             "wal_123",
             "--allowed-chain",
@@ -1107,7 +1100,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
             "--quiet",
             "wallet",
             "import",
-            "--chain",
+            "--chain-family",
             "base",
             "--name",
             "test-wallet",
@@ -1160,7 +1153,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
 }
 
 #[tokio::test]
-async fn sign_submit_renders_json_output_and_sends_agent_proof() {
+async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
@@ -1232,7 +1225,6 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
         .args([
             "--json",
             "sign",
-            "submit",
             "--access-key-id",
             "aak_123",
             "--wallet-id",
@@ -1247,7 +1239,7 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
             "0xabc",
             "--value",
             "10",
-            "--sign-and-submit",
+            "--broadcast",
         ])
         .assert()
         .success()
@@ -1353,7 +1345,7 @@ fn profile_list_use_and_delete_manage_local_registry() {
 }
 
 #[tokio::test]
-async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
+async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
@@ -1431,7 +1423,6 @@ async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
         .args([
             "--json",
             "sign",
-            "submit",
             "--wallet-id",
             "wal_profile",
             "--chain-id",
@@ -1444,7 +1435,7 @@ async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
             "0xabc",
             "--value",
             "10",
-            "--sign-and-submit",
+            "--broadcast",
         ])
         .assert()
         .success()

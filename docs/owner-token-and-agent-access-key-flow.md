@@ -7,9 +7,9 @@ Implementation note as of 2026-04-03:
 
 - owner login currently uses device-code + PKCE with browser passkey approval
 - the owner access token is stored encrypted under `~/.kitepass/config.toml`
-- `sign submit` requires `KITE_AGENT_TOKEN` and performs
+- `kitepass sign` requires `KITE_AGENT_TOKEN` and performs
   `validate -> session challenge -> session create -> final submit`
-- `sign validate` can run with either `KITE_AGENT_TOKEN` or a logged-in owner
+- `kitepass sign --validate` can run with either `KITE_AGENT_TOKEN` or a logged-in owner
   session
 
 ## Identity Split
@@ -110,7 +110,6 @@ The commands look like this:
 
 ```bash
 kitepass policy create \
-  --name trading-policy \
   --wallet-id <wallet_id> \
   --allowed-chain eip155:8453 \
   --allowed-action transaction \
@@ -179,7 +178,7 @@ Passport then verifies:
 If all checks pass, the request proceeds through Policy Authorizer and then
 Vault Signer.
 
-For diagnostics, `kitepass sign validate` can also run under the logged-in
+For diagnostics, `kitepass sign --validate` can also run under the logged-in
 owner session without `KITE_AGENT_TOKEN`. That path is useful for route and
 policy debugging, but it is not the final runtime signing path.
 

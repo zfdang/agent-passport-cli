@@ -46,7 +46,9 @@ The current delegated-signing flow is:
 3. create and activate a policy for that wallet
 4. create a bound runtime access key attached to the wallet and policy
 5. export the one-time Combined Token for that bound key
-6. validate and submit a sign request
+6. validate the signing route
+7. request a signature without broadcast
+8. optionally sign and submit through the relayer
 
 ### 1. Log In As The Owner
 
@@ -66,7 +68,7 @@ In the current implementation, the CLI stores:
 ```bash
 WALLET_JSON="$(
   printf '%s\n' '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7' | \
-    kitepass --json wallet import --chain evm --name "Demo Wallet"
+    kitepass --json wallet import --chain-family evm --name "Demo Wallet"
 )"
 
 WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"
@@ -80,7 +82,6 @@ echo "wallet_id=${WALLET_ID}"
 ```bash
 POLICY_JSON="$(
   kitepass --json policy create \
-    --name demo-policy \
     --wallet-id "$WALLET_ID" \
     --allowed-chain eip155:8453 \
     --allowed-action transaction \
@@ -126,7 +127,28 @@ The Combined Token format is:
 kite_tk_<access_key_id>__<secret_key>
 ```
 
-Save it immediately. The CLI does not print it again.
+The example intentionally prints only `combined_token_prefix` so the full secret does not get written to your terminal history, shell scrollback, screenshots, or CI logs.
+
+The full Combined Token is already available in the current shell as `KITE_AGENT_TOKEN`. That is the value an agent should use.
+
+Typical usage patterns are:
+
+- run the next command in the same shell session:
+
+```bash
+KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+  kitepass --json sign ...
+```
+
+- launch an agent/runtime with the token injected as an environment variable:
+
+```bash
+KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" your-agent-runtime
+```
+
+- if the agent runs in another terminal, container, or host, pass the full `KITE_AGENT_TOKEN` there through your normal secret-injection path
+
+If you lose the full token value, revoke that access key and create a new one. The CLI does not print the full token again.
 
 ### 5. Select The Active Local Profile
 
@@ -137,7 +159,7 @@ kitepass --json profile use --name demo-agent
 ### 6. Validate The Signing Route
 
 ```bash
-kitepass --json sign validate \
+kitepass --json sign --validate \
   --access-key-id "$ACCESS_KEY_ID" \
   --wallet-id "$WALLET_ID" \
   --chain-id eip155:8453 \
@@ -149,37 +171,62 @@ kitepass --json sign validate \
 
 For a first successful run, prefer passing both `--access-key-id` and `--wallet-id` explicitly. Auto wallet selection is supported, but explicit routing is easier to debug when you are bootstrapping a new environment.
 
-`sign validate` can run in two modes:
+`kitepass sign --validate` can run in two modes:
 
 - with `KITE_AGENT_TOKEN`, the CLI signs a validate proof locally with the decrypted agent key
 - with only a logged-in owner session, the CLI can still ask Gateway to validate the route as an owner-facing diagnostic step
 
-### 7. Submit The Signing Request
+### 7. Sign Without Submitting
+
+If the agent wants the final wallet signature but will broadcast the transaction itself, call `kitepass sign` without `--broadcast`.
 
 ```bash
 SIGN_JSON="$(
   KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
-    kitepass --json sign submit \
+    kitepass --json sign \
       --access-key-id "$ACCESS_KEY_ID" \
       --wallet-id "$WALLET_ID" \
       --chain-id eip155:8453 \
       --signing-type transaction \
       --payload 0xdeadbeef \
       --destination 0xabc \
-      --value 10 \
-      --sign-and-submit
+      --value 10
+)"
+
+SIGNATURE="$(printf '%s' "$SIGN_JSON" | jq -r '.signature')"
+echo "signature=${SIGNATURE}"
+```
+
+In this default mode, `kitepass sign` uses `signature_only`. This is the "sign" step: the agent receives the final wallet signature, and no transaction submission `operation_id` is created.
+
+### 8. Sign And Submit The Transaction
+
+```bash
+SIGN_JSON="$(
+  KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+    kitepass --json sign \
+      --broadcast \
+      --access-key-id "$ACCESS_KEY_ID" \
+      --wallet-id "$WALLET_ID" \
+      --chain-id eip155:8453 \
+      --signing-type transaction \
+      --payload 0xdeadbeef \
+      --destination 0xabc \
+      --value 10
 )"
 
 OPERATION_ID="$(printf '%s' "$SIGN_JSON" | jq -r '.operation_id')"
 echo "operation_id=${OPERATION_ID}"
 ```
 
-`sign submit` always requires `KITE_AGENT_TOKEN`. Internally, the CLI performs:
+`kitepass sign` always requires `KITE_AGENT_TOKEN` for signing modes. Internally, the CLI performs:
 
 1. `validate_sign_intent`
 2. `create_session_challenge`
 3. `create_session`
 4. final sign submission with the agent proof
+
+With `--broadcast`, Passport forwards the signed transaction to the relayer and returns an `operation_id` you can poll.
 
 ### 9. Check Operation And Audit State
 
@@ -203,15 +250,17 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
 
 ## Troubleshooting
 
-- `sign submit` requires `KITE_AGENT_TOKEN`
+- `kitepass sign` requires `KITE_AGENT_TOKEN`
   - if the token is lost, revoke that access key and create a new one
-- `sign validate` works with either a logged-in owner session or `KITE_AGENT_TOKEN`
-  - `sign submit` is stricter and requires `KITE_AGENT_TOKEN`
+- `kitepass sign --validate` works with either a logged-in owner session or `KITE_AGENT_TOKEN`
+  - `kitepass sign` and `kitepass sign --broadcast` are stricter and require `KITE_AGENT_TOKEN`
+- `kitepass sign` without `--broadcast` returns the final signature only
+  - add `--broadcast` only when you want Passport to forward the transaction to the relayer
 - `wallet import` currently supports the EVM chain family only
   - accepted aliases are normalized to `evm`
 - `policy create` must happen before the bound runtime key is created
   - create the policy first, then mint the bound runtime key with `--wallet-id` and `--policy-id`
-- if `sign submit` says no local encrypted profile was found
+- if `kitepass sign` says no local encrypted profile was found
   - recreate the access key on the same machine, or sync `~/.kitepass/agents.toml`
 
 ## Additional Docs

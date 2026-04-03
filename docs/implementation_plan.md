@@ -47,28 +47,28 @@ kite_tk_<access_key_id>__<secret_key>
 
 当前行为：
 
-- `sign validate` 支持 `wallet_id` 显式指定
+- `kitepass sign --validate` 支持 `wallet_id` 显式指定
 - 如果未显式给出 `wallet_id`，CLI 会发送 `wallet_selector=auto`
 - Gateway 根据当前 access key、policy、wallet binding 和 `chain_id`
   做路由解析
 
 ### 4. 当前签名调用链
 
-当前 `sign submit` 的实现顺序是：
+当前 `kitepass sign` 的实现顺序是：
 
 1. `validate_sign_intent`
 2. `create_session_challenge`
 3. `create_session`
 4. 最终提交 sign request
 
-`sign submit` 必须提供 `KITE_AGENT_TOKEN`。
+`kitepass sign` 和 `kitepass sign --broadcast` 必须提供 `KITE_AGENT_TOKEN`。
 
 ## 仍应记住的边界
 
 - 当前 `wallet import` 只支持 EVM family
-- `sign validate` 比 `sign submit` 更宽松
+- `kitepass sign --validate` 比 `kitepass sign` 更宽松
   - 它既可以走 owner session，也可以走 `KITE_AGENT_TOKEN`
-- `sign submit` 是真正的 runtime signing path
+- `kitepass sign` 是真正的 runtime signing path
   - 它要求本地 agent key 可解密、可签名
 
 ## 这份文档现在的作用

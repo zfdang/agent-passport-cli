@@ -29,9 +29,9 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 .context("Failed to list wallets")?;
             runtime.print_data(&wallets)?;
         }
-        WalletAction::Import { chain, name } => {
+        WalletAction::Import { chain_family, name } => {
             if runtime.dry_run_enabled() {
-                let chain_family = normalize_wallet_chain_family(&chain)?;
+                let chain_family = normalize_wallet_chain_family(&chain_family)?;
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "wallet.import",
@@ -41,7 +41,7 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 return Ok(());
             }
 
-            let chain_family = normalize_wallet_chain_family(&chain)?;
+            let chain_family = normalize_wallet_chain_family(&chain_family)?;
             runtime.progress(format!(
                 "Starting hybrid wallet import for chain family: {chain_family}"
             ));
