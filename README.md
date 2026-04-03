@@ -43,13 +43,10 @@ The current delegated-signing flow is:
 
 1. log in as the owner
 2. import a wallet
-3. create a bootstrap access key
-4. create and activate a policy using that bootstrap key
-5. create a second, bound runtime access key attached to the wallet and policy
-6. export the one-time Combined Token for that bound key
-7. validate and submit a sign request
-
-The bootstrap key exists because `policy create` currently requires an `access_key_id`, while the runtime signing key must be created against an already-approved `policy_id`.
+3. create and activate a policy for that wallet
+4. create a bound runtime access key attached to the wallet and policy
+5. export the one-time Combined Token for that bound key
+6. validate and submit a sign request
 
 ### 1. Log In As The Owner
 
@@ -78,24 +75,13 @@ echo "wallet_id=${WALLET_ID}"
 
 `wallet import` encrypts the private key locally, fetches the Vault Signer attestation, verifies it, and uploads only attestation-bound ciphertext.
 
-### 3. Create A Bootstrap Access Key
-
-```bash
-SEED_KEY_JSON="$(kitepass --json access-key create --name demo-seed)"
-SEED_ACCESS_KEY_ID="$(printf '%s' "$SEED_KEY_JSON" | jq -r '.access_key_id')"
-echo "seed_access_key_id=${SEED_ACCESS_KEY_ID}"
-```
-
-This key is only used to bootstrap policy creation. It is not the runtime signing key you give to the agent.
-
-### 4. Create And Activate A Policy
+### 3. Create And Activate A Policy
 
 ```bash
 POLICY_JSON="$(
   kitepass --json policy create \
     --name demo-policy \
     --wallet-id "$WALLET_ID" \
-    --access-key-id "$SEED_ACCESS_KEY_ID" \
     --allowed-chain eip155:8453 \
     --allowed-action transaction \
     --max-single-amount 100 \
@@ -110,7 +96,7 @@ echo "policy_id=${POLICY_ID}"
 kitepass --json policy activate --policy-id "$POLICY_ID"
 ```
 
-### 5. Create The Bound Runtime Access Key
+### 4. Create The Bound Runtime Access Key
 
 ```bash
 BOUND_KEY_JSON="$(
@@ -142,13 +128,13 @@ kite_tk_<access_key_id>__<secret_key>
 
 Save it immediately. The CLI does not print it again.
 
-### 6. Select The Active Local Profile
+### 5. Select The Active Local Profile
 
 ```bash
 kitepass --json profile use --name demo-agent
 ```
 
-### 7. Validate The Signing Route
+### 6. Validate The Signing Route
 
 ```bash
 kitepass --json sign validate \
@@ -168,7 +154,7 @@ For a first successful run, prefer passing both `--access-key-id` and `--wallet-
 - with `KITE_AGENT_TOKEN`, the CLI signs a validate proof locally with the decrypted agent key
 - with only a logged-in owner session, the CLI can still ask Gateway to validate the route as an owner-facing diagnostic step
 
-### 8. Submit The Signing Request
+### 7. Submit The Signing Request
 
 ```bash
 SIGN_JSON="$(
@@ -224,7 +210,7 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
 - `wallet import` currently supports the EVM chain family only
   - accepted aliases are normalized to `evm`
 - `policy create` must happen before the bound runtime key is created
-  - use the bootstrap access key for this stage
+  - create the policy first, then mint the bound runtime key with `--wallet-id` and `--policy-id`
 - if `sign submit` says no local encrypted profile was found
   - recreate the access key on the same machine, or sync `~/.kitepass/agents.toml`
 

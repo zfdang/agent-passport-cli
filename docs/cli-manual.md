@@ -52,29 +52,20 @@ Notes:
 
 ## 4. Access-Key Provisioning Model
 
-The current provisioning flow is intentionally two-stage:
+The current provisioning flow is policy-first:
 
-1. create a bootstrap access key
-2. create a policy referencing that bootstrap key
-3. create a second, bound runtime access key attached to the wallet and policy
+1. create a policy for the wallet
+2. activate that policy
+3. create a bound runtime access key attached to the wallet and policy
 
 This sequence is the most reliable way to reach a successful `sign submit` today.
 
-### 4.1 Create A Bootstrap Access Key
-
-```bash
-kitepass --json access-key create --name trading-seed
-```
-
-This creates a local encrypted profile and prints a one-time Combined Token, but the bootstrap key is mainly used to seed policy creation.
-
-### 4.2 Create And Activate A Policy
+### 4.1 Create And Activate A Policy
 
 ```bash
 kitepass --json policy create \
   --name trading-policy \
   --wallet-id <wallet-id> \
-  --access-key-id <seed-access-key-id> \
   --allowed-chain eip155:8453 \
   --allowed-action transaction \
   --max-single-amount 100 \
@@ -87,7 +78,7 @@ kitepass --json policy create \
 kitepass --json policy activate --policy-id <policy-id>
 ```
 
-### 4.3 Create The Bound Runtime Access Key
+### 4.2 Create The Bound Runtime Access Key
 
 ```bash
 kitepass --json access-key create \
@@ -208,6 +199,6 @@ Kitepass CLI stores state in `~/.kitepass/`:
 - **No local encrypted profile**
   - the access key was created on another machine, or `agents.toml` is missing
 - **Policy creation order**
-  - create the bootstrap access key first, then the policy, then the bound runtime key
+  - create the policy first, then provision the bound runtime key with `--wallet-id` and `--policy-id`
 - **Wallet import chain family**
   - use `evm`, `eip155`, or `base`

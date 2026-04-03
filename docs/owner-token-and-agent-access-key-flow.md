@@ -45,19 +45,7 @@ sequenceDiagram
     Gateway-->>CLI: owner access token
     CLI->>CLI: encrypt token into ~/.kitepass/config.toml
 
-    Owner->>CLI: kitepass access-key create --name trading-seed
-    CLI->>CLI: generate Ed25519 keypair locally
-    CLI->>CLI: encrypt private key into inline envelope
-    CLI->>Gateway: prepare provisioning intent
-    CLI->>Gateway: approve provisioning intent
-    CLI->>Gateway: finalize access key
-    Gateway->>Authz: register delegated authority
-    Authz->>Vault: provision policy/key mirror
-    Gateway-->>CLI: seed access_key_id
-    CLI->>CLI: save encrypted profile to ~/.kitepass/agents.toml
-    CLI-->>Owner: display one-time Combined Token
-
-    Owner->>CLI: kitepass policy create ... --access-key-id <seed_access_key_id>
+    Owner->>CLI: kitepass policy create ...
     CLI->>Gateway: create policy
     Gateway->>Authz: persist policy
     Gateway-->>CLI: policy_id
@@ -112,21 +100,18 @@ transaction signing. It is only used for owner-level actions such as:
 
 ## Step 2: The Owner Uses the Token To Provision Delegated Runtime Authority
 
-Today, the most reliable signing path is a two-stage provisioning flow:
+Today, the most reliable signing path is policy-first:
 
-1. create a bootstrap access key
-2. create a policy using that bootstrap `access_key_id`
+1. create a policy for the wallet
+2. activate that policy
 3. create the bound runtime access key that references the approved `policy_id`
 
 The commands look like this:
 
 ```bash
-kitepass access-key create --name trading-seed
-
 kitepass policy create \
   --name trading-policy \
   --wallet-id <wallet_id> \
-  --access-key-id <seed_access_key_id> \
   --allowed-chain eip155:8453 \
   --allowed-action transaction \
   --max-single-amount 100 \

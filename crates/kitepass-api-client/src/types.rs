@@ -215,7 +215,8 @@ pub struct BindingResult {
 pub struct CreatePolicyRequest {
     pub binding_id: Option<String>,
     pub wallet_id: String,
-    pub access_key_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_key_id: Option<String>,
     pub allowed_chains: Vec<String>,
     pub allowed_actions: Vec<String>,
     pub max_single_amount: String,
@@ -402,6 +403,7 @@ pub struct Policy {
     pub policy_id: String,
     pub binding_id: String,
     pub wallet_id: String,
+    #[serde(default)]
     pub access_key_id: String,
     pub allowed_chains: Vec<String>,
     pub allowed_actions: Vec<String>,

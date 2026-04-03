@@ -181,7 +181,7 @@ pub enum PolicyAction {
         #[arg(long)]
         wallet_id: String,
         #[arg(long)]
-        access_key_id: String,
+        access_key_id: Option<String>,
         #[arg(long = "allowed-chain", num_args = 1..)]
         allowed_chains: Vec<String>,
         #[arg(long = "allowed-action", num_args = 1..)]

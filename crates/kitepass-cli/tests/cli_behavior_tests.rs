@@ -763,6 +763,69 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
 }
 
 #[tokio::test]
+async fn policy_create_omits_access_key_id_when_not_provided() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+    let mock_server = MockServer::start().await;
+    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+
+    Mock::given(method("POST"))
+        .and(path("/v1/policies"))
+        .and(header("authorization", "Bearer owner-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "policy_id": "pol_create_456",
+            "binding_id": "",
+            "wallet_id": "wal_123",
+            "access_key_id": "",
+            "allowed_chains": ["eip155:8453"],
+            "allowed_actions": ["transaction"],
+            "max_single_amount": "100",
+            "max_daily_amount": "1000",
+            "allowed_destinations": ["0xabc"],
+            "valid_from": "2026-03-31T00:00:00Z",
+            "valid_until": "2026-04-01T00:00:00Z",
+            "state": "draft",
+            "version": 1
+        })))
+        .mount(&mock_server)
+        .await;
+
+    cli_command(&tempdir)
+        .args([
+            "--json",
+            "policy",
+            "create",
+            "--name",
+            "policy-first",
+            "--wallet-id",
+            "wal_123",
+            "--allowed-chain",
+            "eip155:8453",
+            "--allowed-action",
+            "transaction",
+            "--max-single-amount",
+            "100",
+            "--max-daily-amount",
+            "1000",
+            "--allowed-destination",
+            "0xabc",
+            "--valid-for-hours",
+            "24",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"policy_id\": \"pol_create_456\""));
+
+    let requests = mock_server
+        .received_requests()
+        .await
+        .expect("wiremock should record requests");
+    let body: serde_json::Value =
+        serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
+    assert_eq!(body["wallet_id"], "wal_123");
+    assert!(body.get("access_key_id").is_none());
+}
+
+#[tokio::test]
 async fn policy_get_and_deactivate_render_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
