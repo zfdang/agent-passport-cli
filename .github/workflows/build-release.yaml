@@ -68,7 +68,30 @@ jobs:
 
       - name: Install Zig
         if: ${{ matrix.use_zigbuild }}
-        uses: goto-bus-stop/setup-zig@v2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              zig_target="x86_64-linux"
+              ;;
+            aarch64-unknown-linux-musl)
+              zig_target="aarch64-linux"
+              ;;
+            *)
+              echo "Unsupported Zig target for ${{ matrix.target }}" >&2
+              exit 1
+              ;;
+          esac
+
+          zig_url="$(python3 -c 'import json,re,sys,urllib.request; zig_target=sys.argv[1]; data=json.load(urllib.request.urlopen("https://ziglang.org/download/index.json")); stable_versions=sorted((version for version in data if re.fullmatch(r"\d+\.\d+\.\d+", version)), key=lambda version: tuple(int(part) for part in version.split(".")), reverse=True); print(data[stable_versions[0]][zig_target]["tarball"])' "$zig_target")"
+
+          curl -fsSL "$zig_url" -o zig.tar.xz
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zig/zig" version
 
       - name: Install cargo-zigbuild
         if: ${{ matrix.use_zigbuild }}
@@ -95,12 +118,12 @@ jobs:
 
       - name: Generate build provenance attestation
         if: ${{ !github.event.repository.private || github.event.repository.owner.type == 'Organization' }}
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: target/${{ matrix.target }}/release/kitepass
 
       - name: Upload raw binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
           path: target/${{ matrix.target }}/release/kitepass
@@ -130,7 +153,7 @@ jobs:
 
     steps:
       - name: Download raw binary artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.target }}
           path: artifacts/${{ matrix.target }}
@@ -146,7 +169,7 @@ jobs:
           sha256sum "${release_dir}.tar.gz" > "${release_dir}.tar.gz.sha256"
 
       - name: Upload packaged archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.target }}
           path: |
@@ -169,16 +192,16 @@ jobs:
 
     steps:
       - name: Download packaged archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
           path: release-artifacts
 
       - name: Upload assets to GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: |
-            release-artifacts/*.tar.gz
-            release-artifacts/*.tar.gz.sha256
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${RELEASE_TAG}" release-artifacts/*.tar.gz release-artifacts/*.tar.gz.sha256 --clobber
