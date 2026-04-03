@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "kitepass", about = "Kite Agent Passport CLI")]
+#[command(
+    name = "kitepass",
+    about = "Kite Agent Passport CLI",
+    version = crate::version::DISPLAY_VERSION,
+    propagate_version = true
+)]
 pub struct Cli {
     /// Output format
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Text)]
@@ -286,7 +291,7 @@ pub enum OutputFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
+    use clap::{error::ErrorKind, CommandFactory, Parser};
 
     #[test]
     fn parses_required_global_flags() {
@@ -316,5 +321,23 @@ mod tests {
             .expect("cli should parse");
 
         assert_eq!(cli.format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn reports_build_version() {
+        let err = match Cli::try_parse_from(["kitepass", "--version"]) {
+            Ok(_) => panic!("version flag should short-circuit parsing"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(crate::version::DISPLAY_VERSION));
+    }
+
+    #[test]
+    fn clap_command_uses_build_version() {
+        let command = Cli::command();
+        let version = command.get_version().expect("version should be configured");
+        assert_eq!(version.to_string(), crate::version::DISPLAY_VERSION);
     }
 }

@@ -3,6 +3,7 @@ mod commands;
 mod error;
 mod output;
 mod runtime;
+mod version;
 
 use clap::Parser;
 use std::process::ExitCode;

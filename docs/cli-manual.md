@@ -1,150 +1,198 @@
 # Kitepass CLI Manual
 
-This manual provides detailed instructions on how to use the `kitepass-cli` to interact with the Agent Passport system.
+This manual explains the current production-facing CLI flow for owner login, wallet import, delegated key provisioning, and agent signing.
 
-## 1. Authentication
+## 1. Version And Install Verification
 
-Before performing any operations, you must log in as the owner.
+```bash
+kitepass --version
+```
 
-### 101: Passkey Login
+Expected format:
+
+```text
+0.1.0 (1a2b3c4d)
+```
+
+## 2. Owner Login
+
+Owner actions require an authenticated owner session:
+
 ```bash
 kitepass login
 ```
-This will open a browser to perform a passkey-based authentication.
 
----
+The CLI starts the device-code flow, opens the browser when possible, and stores the owner session in `~/.kitepass/config.toml`.
 
-## 2. Wallet Management
+## 3. Wallet Import
 
-### 201: Import an Existing Wallet
-To import a wallet (e.g., from an EOA private key) into the TEE:
+Wallet import is an owner action. The CLI verifies the Vault Signer attestation, then HPKE-encrypts the wallet secret before upload.
+
 ```bash
 printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
-  kitepass wallet import --chain evm --name "MyTradingWallet"
-```
-*Note: The current wallet-import path accepts EVM private keys in hex form. The key is encrypted via HPKE before leaving your local machine, normalized to a raw 32-byte secp256k1 key inside the TEE, and then sealed for storage.*
-
-### 202: List Wallets
-```bash
-kitepass wallet list
+  kitepass --json wallet import --chain evm --name "MyTradingWallet"
 ```
 
----
+Useful follow-up commands:
 
-## 3. Policy Management
-
-Policies define the spending limits and allowed destinations for your agents.
-
-### 301: Create a Spending Policy
 ```bash
-kitepass policy create \
+kitepass --json wallet list
+kitepass --json wallet get --wallet-id <wallet-id>
+```
+
+Notes:
+
+- wallet import currently supports the EVM chain family only
+- `evm`, `eip155`, and `base` are normalized to the same EVM path
+
+## 4. Access-Key Provisioning Model
+
+The current provisioning flow is intentionally two-stage:
+
+1. create a bootstrap access key
+2. create a policy referencing that bootstrap key
+3. create a second, bound runtime access key attached to the wallet and policy
+
+This sequence is the most reliable way to reach a successful `sign submit` today.
+
+### 4.1 Create A Bootstrap Access Key
+
+```bash
+kitepass --json access-key create --name trading-seed
+```
+
+This creates a local encrypted profile and prints a one-time Combined Token, but the bootstrap key is mainly used to seed policy creation.
+
+### 4.2 Create And Activate A Policy
+
+```bash
+kitepass --json policy create \
   --name trading-policy \
-  --wallet-id <WALLET_ID> \
-  --access-key-id <ACCESS_KEY_ID> \
-  --allowed-chains "eip155:8453" \
+  --wallet-id <wallet-id> \
+  --access-key-id <seed-access-key-id> \
+  --allowed-chain eip155:8453 \
   --allowed-action transaction \
-  --max-single-amount "100000000000000000" \
-  --max-daily-amount "1000000000000000000" \
-  --allowed-destinations "0xabc..." \
+  --max-single-amount 100 \
+  --max-daily-amount 1000 \
+  --allowed-destination 0xabc \
   --valid-for-hours 24
 ```
 
-### 302: Activate a Policy
 ```bash
-kitepass policy activate --policy-id <POLICY_ID>
+kitepass --json policy activate --policy-id <policy-id>
 ```
 
----
+### 4.3 Create The Bound Runtime Access Key
 
-## 4. Agent Access Keys
-
-Access keys are delegated credentials used by autonomous agents.
-
-### 401: Register an Agent Key
 ```bash
-kitepass access-key create \
+kitepass --json access-key create \
   --name trading-bot \
-  --wallet-id <WALLET_ID> \
-  --policy-id <POLICY_ID>
+  --wallet-id <wallet-id> \
+  --policy-id <policy-id>
 ```
 
-This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints a one-time Combined Token:
+This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Combined Token:
 
 ```text
-KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
+kite_tk_<access_key_id>__<secret_key>
 ```
 
 Important notes:
 
-- the private key is no longer stored as a plaintext PEM file
-- the Combined Token is shown only once, so save it immediately
-- if the token is lost, revoke the access key and create a new one
+- the private key is not stored as plaintext PEM
+- the Combined Token is shown only once
+- if the token is lost, revoke the key and mint a new one
+- `access-key bind` is intentionally disabled; create a new bound key instead
 
-### 402: List Local Agent Profiles
+## 5. Local Profiles
+
+List local profiles:
+
 ```bash
-kitepass profile list
+kitepass --json profile list
 ```
 
-`profile list` shows a safe summary of each profile, including storage mode (`encrypted_inline`) and the envelope algorithm metadata, without printing the encrypted blob itself.
+Select the active profile:
 
-### 403: Switch the Active Local Agent Profile
 ```bash
-kitepass profile use --name trading-bot
+kitepass --json profile use --name trading-bot
 ```
 
----
+Delete a local profile record:
 
-## 5. Signing Operations
+```bash
+kitepass --json profile delete --name trading-bot
+```
 
-Agents use their access keys to request signatures via the Passport Gateway.
+`profile list` shows safe metadata such as `private_key_storage = "encrypted_inline"` and envelope algorithm details without printing the encrypted blob itself.
 
-### 501: Sign a Transaction
-First export the Combined Token returned by `access-key create`:
+## 6. Signing
+
+Export the Combined Token from the bound runtime key before signing:
 
 ```bash
 export KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
 ```
 
+### 6.1 Validate Routing And Policy
+
 ```bash
-kitepass sign submit \
+kitepass --json sign validate \
+  --access-key-id <access-key-id> \
+  --wallet-id <wallet-id> \
+  --chain-id eip155:8453 \
   --signing-type transaction \
-  --chain-id "eip155:8453" \
-  --destination "0xabc..." \
-  --value "50000000000000000" \
-  --payload "0x..." \
-  --sign-and-submit
+  --payload 0xdeadbeef \
+  --destination 0xabc \
+  --value 10
 ```
 
-Key behavior in the new signing flow:
+### 6.2 Submit The Signing Request
 
-- `chain_id` must use CAIP-2 notation, such as `eip155:8453` or `eip155:1`
-- when `--wallet-id` is omitted, the CLI sends `wallet_selector=auto` and the Gateway resolves the correct wallet and policy binding for that chain
-- `kitepass sign submit` requires `KITE_AGENT_TOKEN`; the CLI parses the embedded `access_key_id`, locates the matching encrypted profile in `agents.toml`, decrypts the private key locally, and signs the canonical agent intent
-
-### 502: Validate Routing Without Submitting
 ```bash
-kitepass sign validate \
-  --chain-id "eip155:1" \
-  --signing-type transaction \
-  --destination "0xabc..." \
-  --value "1000000000000000" \
-  --payload "0x..."
+KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+  kitepass --json sign submit \
+    --access-key-id <access-key-id> \
+    --wallet-id <wallet-id> \
+    --chain-id eip155:8453 \
+    --signing-type transaction \
+    --payload 0xdeadbeef \
+    --destination 0xabc \
+    --value 10 \
+    --sign-and-submit
 ```
 
-For `sign validate`, the access key is resolved in this order:
+Key behavior:
 
-1. `--access-key-id`
-2. `KITE_AGENT_TOKEN`
-3. `KITE_PROFILE`
-4. `active_profile` in `agents.toml`
-5. the `default` profile
+- `chain_id` uses CAIP-2 notation, such as `eip155:8453`
+- `sign submit` requires `KITE_AGENT_TOKEN`
+- the CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
+- the Gateway then validates agent proof, policy state, wallet binding, and limits before forwarding to the signer path
 
----
+## 7. Operation And Audit Checks
 
-## Troubleshooting
+```bash
+kitepass --json operations get --operation-id <operation-id>
+kitepass --json audit list --wallet-id <wallet-id>
+kitepass --json audit get --event-id <event-id>
+kitepass --json audit verify
+```
 
-- **Check Logs**: Run with `RUST_LOG=debug` to see detailed network interactions.
-- **Missing Token**: `sign submit` now requires `KITE_AGENT_TOKEN`. If the token is lost, revoke the access key and create a new one.
-- **Config Files**:
-  - `~/.kitepass/config.toml`
-  - `~/.kitepass/agents.toml`
+## 8. Local Storage
+
+Kitepass CLI stores state in `~/.kitepass/`:
+
+- `config.toml`
+- `access-token.secret`
+- `agents.toml`
+
+## 9. Troubleshooting
+
+- **Missing Combined Token**
+  - `sign submit` fails by design without `KITE_AGENT_TOKEN`
+- **No local encrypted profile**
+  - the access key was created on another machine, or `agents.toml` is missing
+- **Policy creation order**
+  - create the bootstrap access key first, then the policy, then the bound runtime key
+- **Wallet import chain family**
+  - use `evm`, `eip155`, or `base`

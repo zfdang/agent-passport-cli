@@ -28,7 +28,7 @@ sequenceDiagram
     Gateway-->>CLI: owner access token
     CLI->>CLI: save token in config.toml
 
-    Owner->>CLI: kitepass access-key create --name trading-bot
+    Owner->>CLI: kitepass access-key create --name trading-seed
     CLI->>CLI: generate Ed25519 keypair locally
     CLI->>CLI: encrypt private key into inline envelope
     CLI->>Gateway: prepare access-key provisioning (Bearer owner token)
@@ -36,9 +36,18 @@ sequenceDiagram
     CLI->>Gateway: finalize access-key provisioning (Bearer owner token)
     Gateway->>Authz: register delegated authority
     Authz->>Vault: provision policy/key mirror
-    Gateway-->>CLI: access_key_id + access binding state
+    Gateway-->>CLI: bootstrap access_key_id + access binding state
     CLI->>CLI: save encrypted profile to agents.toml
     CLI-->>Owner: display one-time Combined Token
+
+    Owner->>CLI: kitepass policy create --wallet-id <wallet_id> --access-key-id <seed_access_key_id>
+    CLI->>Gateway: create policy (Bearer owner token)
+    Gateway->>Authz: persist policy
+    Gateway-->>CLI: policy_id
+
+    Owner->>CLI: kitepass access-key create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
+    CLI->>Gateway: provision bound runtime access key
+    Gateway-->>CLI: runtime access_key_id + Combined Token
 
     Agent->>CLI: request sign operation with KITE_AGENT_TOKEN
     CLI->>CLI: parse token + decrypt inline private key
@@ -72,11 +81,32 @@ This token is an **administrative credential**. It is not used for transaction s
 - approving delegated authority
 - managing policies
 
-## Step 2: The Owner Uses the Token to Provision an Agent Access Key
+## Step 2: The Owner Uses the Token To Provision Delegated Runtime Authority
 
-The owner then creates a local agent profile:
+Today, the most reliable signing path is a two-stage provisioning flow:
+
+1. create a bootstrap access key
+2. create a policy using that bootstrap `access_key_id`
+3. create the bound runtime access key that references the approved `policy_id`
+
+The commands look like this:
 
 ```bash
+kitepass access-key create --name trading-seed
+
+kitepass policy create \
+  --name trading-policy \
+  --wallet-id <wallet_id> \
+  --access-key-id <seed_access_key_id> \
+  --allowed-chain eip155:8453 \
+  --allowed-action transaction \
+  --max-single-amount 100 \
+  --max-daily-amount 1000 \
+  --allowed-destination 0xabc \
+  --valid-for-hours 24
+
+kitepass policy activate --policy-id <policy_id>
+
 kitepass access-key create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
 ```
 
@@ -88,7 +118,7 @@ During this step, the CLI:
 4. completes the owner-approved provisioning flow
 5. prints a one-time Combined Token for the agent runtime
 
-The important property here is that the **private key never leaves the local machine**. Passport only receives the public key and the owner-approved delegation request.
+The important property here is that the **private key never leaves the local machine**. Passport only receives the public key plus the owner-approved delegation state.
 
 After provisioning succeeds, the CLI stores the agent identity in:
 
