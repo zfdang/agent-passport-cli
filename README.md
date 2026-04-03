@@ -26,14 +26,14 @@ kitepass --version
 The version string is emitted in the form:
 
 ```text
-0.1.0 (1a2b3c4d)
+kitepass 0.1.0 (1a2b3c4d)
 ```
 
 ## What You Need Before Signing
 
 - a reachable Kitepass deployment
   - the CLI uses `https://api.kitepass.xyz` by default
-- a browser on the same machine for owner passkey login
+- access to a browser that can reach the Kitepass Console for owner passkey approval
 - an EVM private key in hex form for wallet import
 - `jq` if you want to copy-paste the shell examples below exactly
 
@@ -58,6 +58,11 @@ kitepass login
 ```
 
 This opens the browser-based device flow. On success, the CLI stores the owner session locally.
+
+In the current implementation, the CLI stores:
+
+- an encrypted owner access-token envelope in `~/.kitepass/config.toml`
+- the local decryption secret in `~/.kitepass/access-token.secret`
 
 ### 2. Import A Wallet
 
@@ -158,6 +163,11 @@ kitepass --json sign validate \
 
 For a first successful run, prefer passing both `--access-key-id` and `--wallet-id` explicitly. Auto wallet selection is supported, but explicit routing is easier to debug when you are bootstrapping a new environment.
 
+`sign validate` can run in two modes:
+
+- with `KITE_AGENT_TOKEN`, the CLI signs a validate proof locally with the decrypted agent key
+- with only a logged-in owner session, the CLI can still ask Gateway to validate the route as an owner-facing diagnostic step
+
 ### 8. Submit The Signing Request
 
 ```bash
@@ -177,6 +187,13 @@ SIGN_JSON="$(
 OPERATION_ID="$(printf '%s' "$SIGN_JSON" | jq -r '.operation_id')"
 echo "operation_id=${OPERATION_ID}"
 ```
+
+`sign submit` always requires `KITE_AGENT_TOKEN`. Internally, the CLI performs:
+
+1. `validate_sign_intent`
+2. `create_session_challenge`
+3. `create_session`
+4. final sign submission with the agent proof
 
 ### 9. Check Operation And Audit State
 
@@ -202,6 +219,8 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
 
 - `sign submit` requires `KITE_AGENT_TOKEN`
   - if the token is lost, revoke that access key and create a new one
+- `sign validate` works with either a logged-in owner session or `KITE_AGENT_TOKEN`
+  - `sign submit` is stricter and requires `KITE_AGENT_TOKEN`
 - `wallet import` currently supports the EVM chain family only
   - accepted aliases are normalized to `evm`
 - `policy create` must happen before the bound runtime key is created

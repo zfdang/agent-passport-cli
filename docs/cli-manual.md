@@ -11,7 +11,7 @@ kitepass --version
 Expected format:
 
 ```text
-0.1.0 (1a2b3c4d)
+kitepass 0.1.0 (1a2b3c4d)
 ```
 
 ## 2. Owner Login
@@ -22,7 +22,12 @@ Owner actions require an authenticated owner session:
 kitepass login
 ```
 
-The CLI starts the device-code flow, opens the browser when possible, and stores the owner session in `~/.kitepass/config.toml`.
+The CLI starts the device-code flow, opens the browser when possible, and stores the owner session under `~/.kitepass/`.
+
+Current local storage behavior:
+
+- `~/.kitepass/config.toml` stores API settings plus an encrypted owner access-token envelope
+- `~/.kitepass/access-token.secret` stores the local secret used to decrypt that token
 
 ## 3. Wallet Import
 
@@ -147,6 +152,11 @@ kitepass --json sign validate \
   --value 10
 ```
 
+`sign validate` can be used either:
+
+- as an owner-facing diagnostic command after `kitepass login`
+- or as an agent-facing proof flow when `KITE_AGENT_TOKEN` is present
+
 ### 6.2 Submit The Signing Request
 
 ```bash
@@ -166,6 +176,7 @@ Key behavior:
 
 - `chain_id` uses CAIP-2 notation, such as `eip155:8453`
 - `sign submit` requires `KITE_AGENT_TOKEN`
+- `sign submit` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
 - the CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
 - the Gateway then validates agent proof, policy state, wallet binding, and limits before forwarding to the signer path
 
@@ -183,8 +194,12 @@ kitepass --json audit verify
 Kitepass CLI stores state in `~/.kitepass/`:
 
 - `config.toml`
+  - API settings
+  - encrypted owner access-token envelope
 - `access-token.secret`
+  - local secret used to decrypt the stored owner token
 - `agents.toml`
+  - encrypted local agent profiles
 
 ## 9. Troubleshooting
 

@@ -15,7 +15,7 @@ The runtime model is designed to satisfy four goals:
 
 The system now uses two different credential types:
 
-- **Owner token**: stored in `~/.kitepass/config.toml`; used for login, wallet import, policy management, and access-key provisioning
+- **Owner token**: stored as an encrypted envelope in `~/.kitepass/config.toml`, with a local decrypt secret in `~/.kitepass/access-token.secret`; used for login, wallet import, policy management, and access-key provisioning
 - **Combined Token**: shown once during `kitepass access-key create`; used by the agent runtime to unlock the encrypted local key
 
 Combined Token format:
@@ -87,6 +87,8 @@ The Gateway only receives:
 - the agent proof signature
 
 It never receives the decrypted private key.
+
+`kitepass sign validate` is slightly broader: it can run either with `KITE_AGENT_TOKEN` or with a logged-in owner session. That owner path is intended for debugging and route validation, not as the final runtime signing credential.
 
 ## CAIP-2 and Multi-Chain Routing
 
