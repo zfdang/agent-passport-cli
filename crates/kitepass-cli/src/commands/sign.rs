@@ -320,7 +320,7 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                     .context("Failed to validate sign intent")?
             } else {
                 bail!(
-                    "`kitepass sign validate` requires either KITE_AGENT_TOKEN or a logged-in owner session in ~/.config/kitepass/config.toml."
+                    "`kitepass sign validate` requires either KITE_AGENT_TOKEN or a logged-in owner session in ~/.kitepass/config.toml."
                 );
             };
             runtime.print_data(&result)?;

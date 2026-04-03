@@ -146,5 +146,5 @@ For `sign validate`, the access key is resolved in this order:
 - **Check Logs**: Run with `RUST_LOG=debug` to see detailed network interactions.
 - **Missing Token**: `sign submit` now requires `KITE_AGENT_TOKEN`. If the token is lost, revoke the access key and create a new one.
 - **Config Files**:
-  - `~/.config/kitepass/config.toml`
+  - `~/.kitepass/config.toml`
   - `~/.kitepass/agents.toml`

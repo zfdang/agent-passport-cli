@@ -60,7 +60,7 @@ kitepass audit list --wallet-id <wallet-id>
 
 Kitepass CLI stores:
 
-- owner/session settings in `~/.config/kitepass/config.toml`
+- owner/session settings in `~/.kitepass/config.toml`
 - local agent profiles in `~/.kitepass/agents.toml`
 - agent private keys as encrypted inline `CryptoEnvelope` records inside `agents.toml`
 

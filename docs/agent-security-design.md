@@ -15,7 +15,7 @@ The runtime model is designed to satisfy four goals:
 
 The system now uses two different credential types:
 
-- **Owner token**: stored in `~/.config/kitepass/config.toml`; used for login, wallet import, policy management, and access-key provisioning
+- **Owner token**: stored in `~/.kitepass/config.toml`; used for login, wallet import, policy management, and access-key provisioning
 - **Combined Token**: shown once during `kitepass access-key create`; used by the agent runtime to unlock the encrypted local key
 
 Combined Token format:

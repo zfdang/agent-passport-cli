@@ -25,7 +25,7 @@ pub enum ConfigError {
     ProfileNotFound(String),
     #[error("invalid profile name: {0}")]
     InvalidProfileName(String),
-    #[error("missing home/config directory for {0}")]
+    #[error("missing home directory for {0}")]
     MissingHomeDirectory(&'static str),
     #[error("invalid Combined Token format: expected kite_tk_<access_key_id>__<secret_key>")]
     InvalidToken,
@@ -37,7 +37,7 @@ pub enum ConfigError {
 
 /// Local CLI configuration.
 ///
-/// Stored at `~/.config/kitepass/config.toml`.
+/// Stored at `~/.kitepass/config.toml`.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct CliConfig {
     pub api_url: Option<String>,
@@ -170,16 +170,14 @@ fn save_bytes_secure(contents: &[u8], path: &Path) -> Result<(), ConfigError> {
 
 /// Returns the default config directory path.
 pub fn config_dir() -> Result<PathBuf, ConfigError> {
-    dirs::config_dir()
-        .map(|path| path.join("kitepass"))
-        .ok_or(ConfigError::MissingHomeDirectory("CLI config"))
+    dirs::home_dir()
+        .map(|path| path.join(".kitepass"))
+        .ok_or(ConfigError::MissingHomeDirectory("CLI storage"))
 }
 
 /// Returns the local agent profile directory path.
 pub fn agents_dir() -> Result<PathBuf, ConfigError> {
-    dirs::home_dir()
-        .map(|path| path.join(".kitepass"))
-        .ok_or(ConfigError::MissingHomeDirectory("agent registry"))
+    config_dir()
 }
 
 /// Returns the default config file path.

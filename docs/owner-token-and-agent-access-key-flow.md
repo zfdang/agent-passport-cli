@@ -63,7 +63,7 @@ kitepass login
 
 `kitepass-cli` starts the owner authentication flow through the Passport Gateway. The CLI requests a device code, opens a browser, and the user completes passkey authentication there.
 
-If authentication succeeds, the Gateway returns an **owner access token**. The CLI stores that token in `~/.config/kitepass/config.toml`.
+If authentication succeeds, the Gateway returns an **owner access token**. The CLI stores that token in `~/.kitepass/config.toml`.
 
 This token is an **administrative credential**. It is not used for transaction signing. It is only used for owner-level actions such as:
 

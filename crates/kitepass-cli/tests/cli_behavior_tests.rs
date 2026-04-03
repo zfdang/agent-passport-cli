@@ -12,23 +12,12 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const TEST_COMBINED_SECRET: &str =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-fn config_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
-    [
-        tempdir.path().join("kitepass").join("config.toml"),
-        tempdir
-            .path()
-            .join("Library")
-            .join("Application Support")
-            .join("kitepass")
-            .join("config.toml"),
-    ]
+fn config_paths(tempdir: &TempDir) -> Vec<std::path::PathBuf> {
+    vec![tempdir.path().join(".kitepass").join("config.toml")]
 }
 
-fn agents_paths(tempdir: &TempDir) -> [std::path::PathBuf; 2] {
-    [
-        tempdir.path().join(".kitepass").join("agents.toml"),
-        tempdir.path().join("kitepass").join("agents.toml"),
-    ]
+fn agents_paths(tempdir: &TempDir) -> Vec<std::path::PathBuf> {
+    vec![tempdir.path().join(".kitepass").join("agents.toml")]
 }
 
 fn write_config(tempdir: &TempDir, api_url: Option<&str>, access_token: Option<&str>) {
@@ -136,7 +125,7 @@ fn access_key_create_dry_run_emits_json_without_writing_keys() {
         .stdout(contains("\"profile_name\": \"worker-key\""));
 
     assert!(
-        !tempdir.path().join("kitepass").join("keys").exists(),
+        !tempdir.path().join(".kitepass").join("keys").exists(),
         "dry-run should not materialize key files"
     );
 }
@@ -203,14 +192,7 @@ async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
         ));
 
     assert!(
-        !tempdir
-            .path()
-            .join("Library")
-            .join("Application Support")
-            .join("kitepass")
-            .join("keys")
-            .exists()
-            && !tempdir.path().join("kitepass").join("keys").exists(),
+        !tempdir.path().join(".kitepass").join("keys").exists(),
         "access-key create should no longer persist PEM key files"
     );
 
