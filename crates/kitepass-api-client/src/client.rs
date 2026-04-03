@@ -1,7 +1,7 @@
 use crate::error::ApiError;
 use crate::types::{
     AccessKeyListResponse, AccessKeyMutationRequest, AgentAccessKey, AgentSession, AuditEvent,
-    AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse,
+    AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse, ChainFamily,
     CreatePolicyRequest, CreateSessionChallengeRequest, CreateSessionChallengeResponse,
     CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse, FinalizeAccessKeyRequest,
     ImportAttestationResponse, ImportSessionRequest, ImportSessionResponse, Operation,
@@ -85,7 +85,7 @@ impl PassportClient {
 
     pub async fn create_import_session(
         &self,
-        chain_family: &str,
+        chain_family: ChainFamily,
         label: Option<String>,
         idempotency_key: String,
     ) -> Result<ImportSessionResponse, ApiError> {
@@ -93,7 +93,7 @@ impl PassportClient {
         let req = self.maybe_auth(self.http.post(&url));
         let res = req
             .json(&ImportSessionRequest {
-                chain_family: chain_family.to_string(),
+                chain_family,
                 label,
                 idempotency_key,
             })

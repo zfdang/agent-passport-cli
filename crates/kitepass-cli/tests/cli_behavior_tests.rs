@@ -219,7 +219,7 @@ async fn wallet_list_renders_text_table_output() {
                 {
                     "wallet_id": "wal_123",
                     "owner_id": "owner_123",
-                    "chain_family": "eip155",
+                    "chain_family": "evm",
                     "status": "active",
                     "key_blob_ref": "vault://wallets/wal_123",
                     "key_version": 1,
@@ -254,7 +254,7 @@ async fn wallet_list_renders_json_output() {
                 {
                     "wallet_id": "wal_456",
                     "owner_id": "owner_123",
-                    "chain_family": "eip155",
+                    "chain_family": "evm",
                     "status": "active",
                     "key_blob_ref": "vault://wallets/wal_456",
                     "key_version": 1,
@@ -271,7 +271,7 @@ async fn wallet_list_renders_json_output() {
         .assert()
         .success()
         .stdout(contains("\"wallet_id\": \"wal_456\""))
-        .stdout(contains("\"chain_family\": \"eip155\""));
+        .stdout(contains("\"chain_family\": \"evm\""));
 }
 
 #[tokio::test]
@@ -926,7 +926,7 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
     let wallet_body = serde_json::json!({
         "wallet_id": "wal_123",
         "owner_id": "owner_123",
-        "chain_family": "eip155",
+        "chain_family": "evm",
         "status": "active",
         "key_blob_ref": "vault://wallets/wal_123",
         "key_version": 1,
@@ -946,7 +946,7 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallet_id": "wal_freeze_123",
             "owner_id": "owner_123",
-            "chain_family": "eip155",
+            "chain_family": "evm",
             "status": "frozen",
             "key_blob_ref": "vault://wallets/wal_freeze_123",
             "key_version": 1,
@@ -961,7 +961,7 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallet_id": "wal_revoke_123",
             "owner_id": "owner_123",
-            "chain_family": "eip155",
+            "chain_family": "evm",
             "status": "revoked",
             "key_blob_ref": "vault://wallets/wal_revoke_123",
             "key_version": 1,

@@ -1,5 +1,34 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Supported wallet chain families.
+///
+/// Intentional subset of the protocol crate's `kitepass_api_types::chains::ChainFamily`.
+/// Variants and serde representation must stay in sync; helper methods like
+/// `namespace()` and `matches_chain_id()` live only in the protocol crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChainFamily {
+    Evm,
+}
+
+impl ChainFamily {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "evm" | "eip155" | "base" => Some(ChainFamily::Evm),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for ChainFamily {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChainFamily::Evm => write!(f, "evm"),
+        }
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct DeviceCodeResponse {
@@ -32,7 +61,7 @@ pub struct AuthPollResponse {
 
 #[derive(Serialize, Debug)]
 pub struct ImportSessionRequest {
-    pub chain_family: String,
+    pub chain_family: ChainFamily,
     pub label: Option<String>,
     pub idempotency_key: String,
 }
@@ -349,7 +378,7 @@ pub struct AgentSession {
 pub struct Wallet {
     pub wallet_id: String,
     pub owner_id: String,
-    pub chain_family: String,
+    pub chain_family: ChainFamily,
     pub status: String,
     pub key_blob_ref: String,
     pub key_version: u64,

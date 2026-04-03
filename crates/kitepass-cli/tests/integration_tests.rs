@@ -1,5 +1,5 @@
 use kitepass_api_client::{
-    AgentProof, AuthPollRequest, CreateSessionChallengeRequest, CreateSessionRequest,
+    AgentProof, AuthPollRequest, ChainFamily, CreateSessionChallengeRequest, CreateSessionRequest,
     DeviceCodeRequest, ImportAad, PassportClient, SignRequest, SigningMode,
     UploadWalletCiphertextRequest, ValidateAgentProof, ValidateSignIntentRequest,
 };
@@ -142,7 +142,7 @@ async fn test_wallet_hybrid_import() {
 
     let session_res = client
         .create_import_session(
-            "base",
+            ChainFamily::parse("base").expect("base should map to the evm chain family"),
             Some("test-wallet".to_string()),
             "idem_123".to_string(),
         )

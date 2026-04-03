@@ -1,8 +1,8 @@
 use crate::commands::load_cli_config;
 use crate::commands::wallet_import::{build_import_hpke_info, verify_import_attestation};
 use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
-use anyhow::{bail, Context, Result};
-use kitepass_api_client::{ImportAad, PassportClient, UploadWalletCiphertextRequest};
+use anyhow::{Context, Result};
+use kitepass_api_client::{ChainFamily, ImportAad, PassportClient, UploadWalletCiphertextRequest};
 use kitepass_crypto::hpke::seal_to_hex;
 use serde_json::json;
 use tokio::task::spawn_blocking;
@@ -30,18 +30,20 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
             runtime.print_data(&wallets)?;
         }
         WalletAction::Import { chain_family, name } => {
+            let chain_family = ChainFamily::parse(&chain_family).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unsupported chain family `{chain_family}`; supported: evm, eip155, base"
+                )
+            })?;
             if runtime.dry_run_enabled() {
-                let chain_family = normalize_wallet_chain_family(&chain_family)?;
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "wallet.import",
-                    "chain_family": chain_family,
+                    "chain_family": chain_family.to_string(),
                     "label": name,
                 }))?;
                 return Ok(());
             }
-
-            let chain_family = normalize_wallet_chain_family(&chain_family)?;
             runtime.progress(format!(
                 "Starting hybrid wallet import for chain family: {chain_family}"
             ));
@@ -176,11 +178,4 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn normalize_wallet_chain_family(value: &str) -> Result<&'static str> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "evm" | "eip155" | "base" => Ok("evm"),
-        other => bail!("wallet import currently supports the evm chain family only, got `{other}`"),
-    }
 }
