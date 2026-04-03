@@ -6,6 +6,9 @@ use rand::RngCore;
 use sha2::Sha256;
 use zeroize::Zeroizing;
 
+const GCM_NONCE_LEN: usize = 12;
+const GCM_TAG_LEN: usize = 16;
+
 #[derive(Debug, thiserror::Error)]
 pub enum EnvelopeError {
     #[error("Encryption failed")]
@@ -36,7 +39,7 @@ impl Envelope {
         let cipher = Aes256Gcm::new(okm.as_ref().into());
 
         // Generate a random 12-byte nonce
-        let mut nonce_bytes = [0u8; 12];
+        let mut nonce_bytes = [0u8; GCM_NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = GcmNonce::from_slice(&nonce_bytes);
 
@@ -65,7 +68,7 @@ impl Envelope {
         vault_nonce: &[u8; 32],
         encrypted_payload: &[u8],
     ) -> Result<Vec<u8>, EnvelopeError> {
-        if encrypted_payload.len() < 12 + 16 {
+        if encrypted_payload.len() < GCM_NONCE_LEN + GCM_TAG_LEN {
             return Err(EnvelopeError::DecryptionFailed);
         }
 
@@ -77,8 +80,9 @@ impl Envelope {
 
         let cipher = Aes256Gcm::new(okm.as_ref().into());
 
-        let nonce_bytes = &encrypted_payload[..12];
-        let ciphertext = &encrypted_payload[12..];
+        // The length guard above guarantees this split is safe and that
+        // ciphertext still includes the required 16-byte GCM authentication tag.
+        let (nonce_bytes, ciphertext) = encrypted_payload.split_at(GCM_NONCE_LEN);
 
         let nonce = GcmNonce::from_slice(nonce_bytes);
         let payload = Payload {
@@ -110,5 +114,16 @@ mod tests {
         let decrypted =
             Envelope::decrypt(&shared_secret, &pubkey, &vault_nonce, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_payload_shorter_than_nonce_and_tag() {
+        let shared_secret = [1u8; 32];
+        let pubkey = [2u8; 32];
+        let vault_nonce = [3u8; 32];
+        let encrypted = vec![0u8; GCM_NONCE_LEN + GCM_TAG_LEN - 1];
+
+        let result = Envelope::decrypt(&shared_secret, &pubkey, &vault_nonce, &encrypted);
+        assert!(matches!(result, Err(EnvelopeError::DecryptionFailed)));
     }
 }

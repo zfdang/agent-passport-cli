@@ -24,12 +24,15 @@ pub enum EncryptionError {
     UnsupportedCipher(String),
     #[error("Unsupported KDF: {0}")]
     UnsupportedKdf(String),
+    #[error("Key derivation failed during {0}")]
+    KeyDerivationFailed(&'static str),
 }
 
 // ── Combined Token ──────────────────────────────────────
 
 const TOKEN_PREFIX: &str = "kite_tk_";
 const TOKEN_DELIMITER: &str = "__";
+const MAX_ACCESS_KEY_ID_LEN: usize = 255;
 
 /// Parsed representation of `kite_tk_<access_key_id>__<secret_key>`.
 #[derive(Debug, Clone)]
@@ -52,7 +55,10 @@ impl CombinedToken {
             .split_once(TOKEN_DELIMITER)
             .ok_or(EncryptionError::InvalidTokenFormat)?;
 
-        if !access_key_id.starts_with("aak_") || access_key_id.len() < 5 {
+        if !access_key_id.starts_with("aak_")
+            || access_key_id.len() < 5
+            || access_key_id.len() > MAX_ACCESS_KEY_ID_LEN
+        {
             return Err(EncryptionError::InvalidTokenFormat);
         }
 
@@ -101,7 +107,7 @@ impl CryptoEnvelope {
         let hk = Hkdf::<Sha256>::new(Some(&salt), secret_key.as_bytes());
         let mut aes_key = Zeroizing::new([0u8; 32]);
         hk.expand(b"kitepass-agent-key-encryption", aes_key.as_mut())
-            .map_err(|_| EncryptionError::EncryptionFailed)?;
+            .map_err(|_| EncryptionError::KeyDerivationFailed("encryption"))?;
 
         // Generate random 12-byte nonce
         let mut nonce_bytes = [0u8; 12];
@@ -143,7 +149,7 @@ impl CryptoEnvelope {
         let hk = Hkdf::<Sha256>::new(Some(&salt), secret_key.as_bytes());
         let mut aes_key = Zeroizing::new([0u8; 32]);
         hk.expand(b"kitepass-agent-key-encryption", aes_key.as_mut())
-            .map_err(|_| EncryptionError::DecryptionFailed)?;
+            .map_err(|_| EncryptionError::KeyDerivationFailed("decryption"))?;
 
         let cipher = Aes256Gcm::new(aes_key.as_ref().into());
         let gcm_nonce = GcmNonce::from_slice(&nonce_bytes);
@@ -206,6 +212,17 @@ mod tests {
         let parsed = CombinedToken::parse(&formatted).unwrap();
         assert_eq!(parsed.access_key_id, "aak_alpha_beta");
         assert_eq!(*parsed.secret_key, secret);
+    }
+
+    #[test]
+    fn combined_token_rejects_overlong_access_key_ids() {
+        let secret = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let access_key_id = format!("aak_{}", "x".repeat(MAX_ACCESS_KEY_ID_LEN));
+        let formatted = CombinedToken::format(&access_key_id, secret);
+        assert!(matches!(
+            CombinedToken::parse(&formatted),
+            Err(EncryptionError::InvalidTokenFormat)
+        ));
     }
 
     #[test]

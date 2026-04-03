@@ -3,7 +3,9 @@ pub mod agents;
 use kitepass_crypto::encryption::{generate_secret_key, CryptoEnvelope, EncryptionError};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use thiserror::Error;
 
 pub use agents::{
@@ -12,6 +14,9 @@ pub use agents::{
 };
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
+const ACCESS_TOKEN_SECRET_HEX_LEN: usize = 64;
+const ACCESS_TOKEN_SECRET_READ_RETRIES: usize = 20;
+const ACCESS_TOKEN_SECRET_READ_RETRY_DELAY_MS: u64 = 10;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -128,21 +133,48 @@ fn access_token_secret_path(config_path: &Path) -> PathBuf {
 }
 
 fn load_access_token_secret(config_path: &Path) -> Result<String, ConfigError> {
-    Ok(fs::read_to_string(access_token_secret_path(config_path))?)
+    load_access_token_secret_when_ready(&access_token_secret_path(config_path))
+}
+
+fn access_token_secret_is_ready(secret: &str) -> bool {
+    let trimmed = secret.trim();
+    trimmed.len() == ACCESS_TOKEN_SECRET_HEX_LEN
+        && trimmed.chars().all(|value| value.is_ascii_hexdigit())
+}
+
+fn load_access_token_secret_when_ready(secret_path: &Path) -> Result<String, ConfigError> {
+    for attempt in 0..ACCESS_TOKEN_SECRET_READ_RETRIES {
+        let secret = fs::read_to_string(secret_path)?;
+        if access_token_secret_is_ready(&secret) {
+            return Ok(secret);
+        }
+        if attempt + 1 < ACCESS_TOKEN_SECRET_READ_RETRIES {
+            std::thread::sleep(Duration::from_millis(
+                ACCESS_TOKEN_SECRET_READ_RETRY_DELAY_MS,
+            ));
+        }
+    }
+
+    Ok(fs::read_to_string(secret_path)?)
 }
 
 fn load_or_create_access_token_secret(config_path: &Path) -> Result<String, ConfigError> {
     let secret_path = access_token_secret_path(config_path);
-    if secret_path.exists() {
-        return Ok(fs::read_to_string(secret_path)?);
+    if let Ok(secret) = load_access_token_secret_when_ready(&secret_path) {
+        return Ok(secret);
     }
 
     let secret = generate_secret_key();
-    save_bytes_secure(secret.as_bytes(), &secret_path)?;
-    Ok(secret.to_string())
+    match save_bytes_secure_new(secret.as_bytes(), &secret_path) {
+        Ok(()) => Ok(secret.to_string()),
+        Err(ConfigError::Io(error)) if error.kind() == ErrorKind::AlreadyExists => {
+            load_access_token_secret_when_ready(&secret_path)
+        }
+        Err(error) => Err(error),
+    }
 }
 
-fn save_bytes_secure(contents: &[u8], path: &Path) -> Result<(), ConfigError> {
+fn save_bytes_secure_new(contents: &[u8], path: &Path) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)?;
@@ -155,14 +187,18 @@ fn save_bytes_secure(contents: &[u8], path: &Path) -> Result<(), ConfigError> {
         use std::os::unix::fs::OpenOptionsExt;
 
         let mut options = fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true).mode(0o600);
+        options.write(true).create_new(true).mode(0o600);
         let mut file = options.open(path)?;
         file.write_all(contents)?;
     }
 
     #[cfg(not(unix))]
     {
-        fs::write(path, contents)?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        let mut file = options.open(path)?;
+        use std::io::Write;
+        file.write_all(contents)?;
     }
 
     Ok(())
@@ -193,6 +229,7 @@ pub fn agents_path() -> Result<PathBuf, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier, Mutex};
     use tempfile::tempdir;
 
     #[test]
@@ -238,5 +275,31 @@ access_token = "legacy_token_123"
         let loaded = CliConfig::load(&path).unwrap();
         assert_eq!(loaded.access_token.as_deref(), Some("legacy_token_123"));
         assert!(loaded.encrypted_access_token.is_none());
+    }
+
+    #[test]
+    fn load_or_create_access_token_secret_is_atomic_under_concurrency() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let barrier = Arc::new(Barrier::new(8));
+        let results = Arc::new(Mutex::new(Vec::new()));
+
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                let barrier = Arc::clone(&barrier);
+                let results = Arc::clone(&results);
+                let path = path.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    let secret = load_or_create_access_token_secret(&path).unwrap();
+                    results.lock().unwrap().push(secret);
+                });
+            }
+        });
+
+        let results = results.lock().unwrap();
+        assert_eq!(results.len(), 8);
+        assert!(results.iter().all(|secret| secret == &results[0]));
+        assert!(path.with_file_name("access-token.secret").exists());
     }
 }

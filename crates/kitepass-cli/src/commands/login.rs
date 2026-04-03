@@ -13,10 +13,12 @@ use zeroize::Zeroizing;
 const MAX_DEVICE_CODE_TIMEOUT_SECS: u64 = 600;
 const MAX_DEVICE_CODE_ERROR_BACKOFF_SECS: u64 = 30;
 
-fn generate_pkce_verifier() -> String {
+fn generate_pkce_verifier() -> Result<String> {
     let mut bytes = [0u8; 32];
-    OsRng.try_fill_bytes(&mut bytes).expect("OS RNG failed");
-    URL_SAFE_NO_PAD.encode(bytes)
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .context("failed to read secure randomness for PKCE verifier")?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 fn pkce_s256_challenge(code_verifier: &str) -> String {
@@ -38,7 +40,7 @@ pub async fn run(runtime: &Runtime) -> Result<()> {
 
     let client =
         PassportClient::new(api_url).context("Failed to initialize Passport API client")?;
-    let code_verifier = Zeroizing::new(generate_pkce_verifier());
+    let code_verifier = Zeroizing::new(generate_pkce_verifier()?);
     let code_challenge = pkce_s256_challenge(code_verifier.as_str());
 
     runtime.progress("Starting CLI device login...");
@@ -106,7 +108,8 @@ pub async fn run(runtime: &Runtime) -> Result<()> {
                 }
                 Err(e) => {
                     error_streak = error_streak.saturating_add(1);
-                    runtime.progress(format!("Polling error... retrying. ({e})"));
+                    let _ = e;
+                    runtime.progress("Polling error... retrying.");
                 }
             }
 
