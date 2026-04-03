@@ -211,7 +211,9 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             let bindings = client
                 .list_bindings(&access_key_id)
                 .await
-                .with_context(|| format!("Failed to list bindings for access key {access_key_id}"))?;
+                .with_context(|| {
+                    format!("Failed to list bindings for access key {access_key_id}")
+                })?;
             let usage = client
                 .get_access_key_usage(&access_key_id)
                 .await
