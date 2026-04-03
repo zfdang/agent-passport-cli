@@ -191,6 +191,11 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
       - name: Download packaged archives
         uses: actions/download-artifact@v8
         with:
