@@ -71,7 +71,7 @@ kitepass access-key create \
 This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints a one-time Combined Token:
 
 ```text
-KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
 ```
 
 Important notes:
@@ -102,7 +102,7 @@ Agents use their access keys to request signatures via the Passport Gateway.
 First export the Combined Token returned by `access-key create`:
 
 ```bash
-export KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+export KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
 ```
 
 ```bash

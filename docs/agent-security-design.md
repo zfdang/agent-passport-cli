@@ -21,7 +21,7 @@ The system now uses two different credential types:
 Combined Token format:
 
 ```text
-kite_tk_<access_key_id>_<secret_key>
+kite_tk_<access_key_id>__<secret_key>
 ```
 
 The token carries:

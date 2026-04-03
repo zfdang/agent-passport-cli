@@ -5,7 +5,7 @@
 该方案通过引入“语义化 Token”和“多链自动寻址”，实现了 Agent 的极致易用性与安全性。
 
 ### 1. 身份与解密：Combined Token
-Agent 仅需配置一个环境变量：`KITE_AGENT_TOKEN = "kite_tk_<access_key_id>_<secret_key>"`。
+Agent 仅需配置一个环境变量：`KITE_AGENT_TOKEN = "kite_tk_<access_key_id>__<secret_key>"`。
 - **解析行为**：SDK 自动从 Token 中提取 ID 以检索配置，并使用 Secret 解密私钥。
 - **强制加密**：所有私钥以 `CryptoEnvelope` 形式内联存储在 `agents.toml` 中，彻底弃用明文 PEM 文件。
 

@@ -41,7 +41,7 @@ impl AgentRegistry {
     }
 
     pub fn load_default() -> Result<Self, ConfigError> {
-        Self::load(&agents_path())
+        Self::load(&agents_path()?)
     }
 
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
@@ -49,7 +49,7 @@ impl AgentRegistry {
     }
 
     pub fn save_default(&self) -> Result<(), ConfigError> {
-        self.save(&agents_path())
+        self.save(&agents_path()?)
     }
 
     pub fn selected_profile_name(&self) -> String {

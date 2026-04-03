@@ -280,6 +280,14 @@ pub struct ValidateSignIntentRequest {
     pub payload: String,
     pub destination: String,
     pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_proof: Option<ValidateAgentProof>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ValidateAgentProof {
+    pub signature: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -306,6 +314,25 @@ pub struct ValidateSignIntentResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateSessionRequest {
     pub access_key_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub challenge_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof_signature: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CreateSessionChallengeRequest {
+    pub access_key_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CreateSessionChallengeResponse {
+    pub challenge_id: String,
+    pub access_key_id: String,
+    pub challenge_nonce: String,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

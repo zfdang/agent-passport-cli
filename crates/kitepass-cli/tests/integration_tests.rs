@@ -1,6 +1,7 @@
 use kitepass_api_client::{
-    AgentProof, AuthPollRequest, DeviceCodeRequest, ImportAad, PassportClient, SignRequest,
-    SigningMode, UploadWalletCiphertextRequest, ValidateSignIntentRequest,
+    AgentProof, AuthPollRequest, CreateSessionChallengeRequest, CreateSessionRequest,
+    DeviceCodeRequest, ImportAad, PassportClient, SignRequest, SigningMode,
+    UploadWalletCiphertextRequest, ValidateAgentProof, ValidateSignIntentRequest,
 };
 use kitepass_crypto::hpke::{generate_recipient_keypair, seal_to_hex, IMPORT_ENCRYPTION_SCHEME};
 use wiremock::matchers::{method, path};
@@ -392,6 +393,17 @@ async fn test_agent_signing_surfaces() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
+        .and(path("/v1/sessions/challenge"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "challenge_id": "sch_123",
+            "access_key_id": "aak_123",
+            "challenge_nonce": "nonce_challenge_123",
+            "expires_at": "2026-03-31T00:05:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
@@ -436,7 +448,21 @@ async fn test_agent_signing_surfaces() {
         .await;
 
     let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
-    let session = client.create_session("aak_123").await.unwrap();
+    let _challenge = client
+        .create_session_challenge(&CreateSessionChallengeRequest {
+            access_key_id: "aak_123".to_string(),
+        })
+        .await
+        .unwrap();
+    let session = client
+        .create_session(&CreateSessionRequest {
+            access_key_id: "aak_123".to_string(),
+            request_id: Some("req_session_123".to_string()),
+            challenge_id: Some("sch_123".to_string()),
+            proof_signature: Some("0xproof".to_string()),
+        })
+        .await
+        .unwrap();
     assert_eq!(session.session_nonce, "nonce_123");
 
     let validate = client
@@ -450,6 +476,9 @@ async fn test_agent_signing_surfaces() {
             payload: "0xdeadbeef".to_string(),
             destination: "0xabc".to_string(),
             value: "10".to_string(),
+            agent_proof: Some(ValidateAgentProof {
+                signature: "0xvalidateproof".to_string(),
+            }),
         })
         .await
         .unwrap();

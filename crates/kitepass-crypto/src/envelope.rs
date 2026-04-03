@@ -4,6 +4,7 @@ use hkdf::Hkdf;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::Sha256;
+use zeroize::Zeroizing;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EnvelopeError {
@@ -28,11 +29,11 @@ impl Envelope {
     ) -> Result<Vec<u8>, EnvelopeError> {
         // Derive key using HKDF-SHA256
         let hk = Hkdf::<Sha256>::new(Some(vault_nonce.as_ref()), shared_secret.as_ref());
-        let mut okm = [0u8; 32];
+        let mut okm = Zeroizing::new([0u8; 32]);
         hk.expand(vault_signer_pubkey.as_ref(), &mut okm)
             .map_err(|_| EnvelopeError::EncryptionFailed)?;
 
-        let cipher = Aes256Gcm::new((&okm).into());
+        let cipher = Aes256Gcm::new(okm.as_ref().into());
 
         // Generate a random 12-byte nonce
         let mut nonce_bytes = [0u8; 12];
@@ -70,11 +71,11 @@ impl Envelope {
 
         // Derive key
         let hk = Hkdf::<Sha256>::new(Some(vault_nonce.as_ref()), shared_secret.as_ref());
-        let mut okm = [0u8; 32];
+        let mut okm = Zeroizing::new([0u8; 32]);
         hk.expand(vault_signer_pubkey.as_ref(), &mut okm)
             .map_err(|_| EnvelopeError::DecryptionFailed)?;
 
-        let cipher = Aes256Gcm::new((&okm).into());
+        let cipher = Aes256Gcm::new(okm.as_ref().into());
 
         let nonce_bytes = &encrypted_payload[..12];
         let ciphertext = &encrypted_payload[12..];

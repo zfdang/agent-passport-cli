@@ -33,7 +33,7 @@ printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
 kitepass access-key create --name trading-agent
 
 # Export the one-time Combined Token returned by the create command
-export KITE_AGENT_TOKEN="kite_tk_<access_key_id>_<secret_key>"
+export KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
 
 # Submit a transaction using CAIP-2 chain IDs and automatic wallet discovery
 kitepass sign submit \
@@ -67,7 +67,7 @@ Kitepass CLI stores:
 `access-key create` prints a one-time Combined Token:
 
 ```text
-kite_tk_<access_key_id>_<secret_key>
+kite_tk_<access_key_id>__<secret_key>
 ```
 
 At runtime, `kitepass sign submit` requires `KITE_AGENT_TOKEN`. The CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `agents.toml`, decrypts the private key locally, and signs the request without depending on any PEM file.
@@ -83,7 +83,7 @@ For validation-only requests, the access key resolves in this order:
 Example:
 
 ```bash
-export KITE_AGENT_TOKEN="kite_tk_aak_123_<secret>"
+export KITE_AGENT_TOKEN="kite_tk_aak_123__<secret>"
 
 kitepass sign submit \
   --chain-id eip155:8453 \

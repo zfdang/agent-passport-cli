@@ -3,7 +3,8 @@ use crate::commands::{load_agent_registry, load_cli_config};
 use crate::runtime::Runtime;
 use anyhow::{bail, Context, Result};
 use kitepass_api_client::{
-    AgentProof, PassportClient, SignRequest, SigningMode, ValidateSignIntentRequest,
+    AgentProof, CreateSessionChallengeRequest, CreateSessionRequest, PassportClient, SignRequest,
+    SigningMode, ValidateAgentProof, ValidateSignIntentRequest,
 };
 use kitepass_config::{env_agent_token, AgentRegistry};
 use kitepass_crypto::agent_key::AgentKey;
@@ -26,6 +27,25 @@ struct CanonicalSignIntent<'a> {
     mode: &'a str,
 }
 
+struct CanonicalValidateIntent<'a> {
+    request_id: &'a str,
+    access_key_id: &'a str,
+    wallet_id: Option<&'a str>,
+    wallet_selector: Option<&'a str>,
+    chain_id: &'a str,
+    signing_type: &'a str,
+    payload: &'a str,
+    destination: &'a str,
+    value: &'a str,
+}
+
+struct CanonicalSessionCreate<'a> {
+    request_id: &'a str,
+    access_key_id: &'a str,
+    challenge_id: &'a str,
+    challenge_nonce: &'a str,
+}
+
 #[derive(Serialize)]
 struct CanonicalAgentIntent<'a> {
     #[serde(rename = "type")]
@@ -42,6 +62,37 @@ struct CanonicalAgentIntent<'a> {
     value: &'a str,
     session_nonce: &'a str,
     mode: &'a str,
+}
+
+#[derive(Serialize)]
+struct CanonicalValidateProof<'a> {
+    #[serde(rename = "type")]
+    intent_type: &'a str,
+    #[serde(rename = "version")]
+    intent_version: u32,
+    request_id: &'a str,
+    access_key_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wallet_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wallet_selector: Option<&'a str>,
+    chain_id: &'a str,
+    signing_type: &'a str,
+    payload_hash: &'a str,
+    destination: &'a str,
+    value: &'a str,
+}
+
+#[derive(Serialize)]
+struct CanonicalSessionCreateProof<'a> {
+    #[serde(rename = "type")]
+    intent_type: &'a str,
+    #[serde(rename = "version")]
+    intent_version: u32,
+    request_id: &'a str,
+    access_key_id: &'a str,
+    challenge_id: &'a str,
+    challenge_nonce: &'a str,
 }
 
 fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Result<Vec<u8>> {
@@ -64,6 +115,48 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Result<Vec<u8>> 
         mode: intent.mode,
     };
     serde_json_canonicalizer::to_vec(&intent).context("Failed to canonicalize sign intent")
+}
+
+fn payload_hash(payload: &str) -> String {
+    format!("0x{}", hex::encode(Sha256::digest(payload.as_bytes())))
+}
+
+fn canonical_validate_message(intent: &CanonicalValidateIntent<'_>) -> Result<Vec<u8>> {
+    let payload_hash = payload_hash(intent.payload);
+    let intent = CanonicalValidateProof {
+        intent_type: "validate_sign_intent",
+        intent_version: 1,
+        request_id: intent.request_id,
+        access_key_id: intent.access_key_id,
+        wallet_id: intent.wallet_id,
+        wallet_selector: intent.wallet_selector,
+        chain_id: intent.chain_id,
+        signing_type: intent.signing_type,
+        payload_hash: &payload_hash,
+        destination: intent.destination,
+        value: intent.value,
+    };
+    serde_json_canonicalizer::to_vec(&intent)
+        .context("Failed to canonicalize validate-sign-intent proof")
+}
+
+fn canonical_session_create_message(intent: &CanonicalSessionCreate<'_>) -> Result<Vec<u8>> {
+    let intent = CanonicalSessionCreateProof {
+        intent_type: "create_session",
+        intent_version: 1,
+        request_id: intent.request_id,
+        access_key_id: intent.access_key_id,
+        challenge_id: intent.challenge_id,
+        challenge_nonce: intent.challenge_nonce,
+    };
+    serde_json_canonicalizer::to_vec(&intent).context("Failed to canonicalize create-session proof")
+}
+
+fn sign_hex(agent_key: &AgentKey, message: &[u8]) -> String {
+    format!(
+        "0x{}",
+        hex::encode(agent_key.sign_bytes(message).to_bytes())
+    )
 }
 
 struct ResolvedSigner {
@@ -170,24 +263,66 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
             destination,
             value,
         } => {
-            let access_key_id = resolve_validate_access_key_id(access_key_id, &registry)?;
-
             let request_id = format!("req_{}", Uuid::new_v4().simple());
             let wallet_selector = resolve_wallet_selector(&wallet_id, wallet_selector);
-            let result = client
-                .validate_sign_intent(&ValidateSignIntentRequest {
-                    request_id,
-                    wallet_id,
-                    wallet_selector,
-                    access_key_id,
-                    chain_id,
-                    signing_type,
-                    payload,
-                    destination,
-                    value,
-                })
-                .await
-                .context("Failed to validate sign intent")?;
+            let result = if env_agent_token().is_some() {
+                let signer = resolve_submit_signer(access_key_id, &registry)?;
+                let proof_signature = sign_hex(
+                    &signer.agent_key,
+                    &canonical_validate_message(&CanonicalValidateIntent {
+                        request_id: &request_id,
+                        access_key_id: &signer.access_key_id,
+                        wallet_id: wallet_id.as_deref(),
+                        wallet_selector: wallet_selector.as_deref(),
+                        chain_id: &chain_id,
+                        signing_type: &signing_type,
+                        payload: &payload,
+                        destination: &destination,
+                        value: &value,
+                    })?,
+                );
+                client
+                    .validate_sign_intent(&ValidateSignIntentRequest {
+                        request_id,
+                        wallet_id,
+                        wallet_selector,
+                        access_key_id: signer.access_key_id,
+                        chain_id,
+                        signing_type,
+                        payload,
+                        destination,
+                        value,
+                        agent_proof: Some(ValidateAgentProof {
+                            signature: proof_signature,
+                        }),
+                    })
+                    .await
+                    .context("Failed to validate sign intent")?
+            } else if let Some(token) = config.access_token.clone() {
+                let owner_client = PassportClient::new(api_url)
+                    .context("Failed to initialize Passport API client")?
+                    .with_token(token);
+                let access_key_id = resolve_validate_access_key_id(access_key_id, &registry)?;
+                owner_client
+                    .validate_sign_intent(&ValidateSignIntentRequest {
+                        request_id,
+                        wallet_id,
+                        wallet_selector,
+                        access_key_id,
+                        chain_id,
+                        signing_type,
+                        payload,
+                        destination,
+                        value,
+                        agent_proof: None,
+                    })
+                    .await
+                    .context("Failed to validate sign intent")?
+            } else {
+                bail!(
+                    "`kitepass sign validate` requires either KITE_AGENT_TOKEN or a logged-in owner session in ~/.config/kitepass/config.toml."
+                );
+            };
             runtime.print_data(&result)?;
         }
         SignAction::Submit {
@@ -226,6 +361,20 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
 
             let request_id = format!("req_{}", Uuid::new_v4().simple());
             let idempotency_key = format!("idem_{}", Uuid::new_v4().simple());
+            let validate_proof_signature = sign_hex(
+                &resolved_signer.agent_key,
+                &canonical_validate_message(&CanonicalValidateIntent {
+                    request_id: &request_id,
+                    access_key_id: &resolved_signer.access_key_id,
+                    wallet_id: wallet_id.as_deref(),
+                    wallet_selector: wallet_selector.as_deref(),
+                    chain_id: &chain_id,
+                    signing_type: &signing_type,
+                    payload: &payload,
+                    destination: &destination,
+                    value: &value,
+                })?,
+            );
             let validate = client
                 .validate_sign_intent(&ValidateSignIntentRequest {
                     request_id: request_id.clone(),
@@ -237,20 +386,43 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                     payload: payload.clone(),
                     destination: destination.clone(),
                     value: value.clone(),
+                    agent_proof: Some(ValidateAgentProof {
+                        signature: validate_proof_signature,
+                    }),
                 })
                 .await
                 .context("Failed to validate sign intent before submit")?;
             if !validate.valid {
                 bail!("Sign intent validation succeeded but returned valid=false");
             }
+            let session_request_id = format!("req_{}", Uuid::new_v4().simple());
+            let challenge = client
+                .create_session_challenge(&CreateSessionChallengeRequest {
+                    access_key_id: resolved_signer.access_key_id.clone(),
+                })
+                .await
+                .context("Failed to create agent session challenge")?;
             let session = client
-                .create_session(&resolved_signer.access_key_id)
+                .create_session(&CreateSessionRequest {
+                    access_key_id: resolved_signer.access_key_id.clone(),
+                    request_id: Some(session_request_id.clone()),
+                    challenge_id: Some(challenge.challenge_id.clone()),
+                    proof_signature: Some(sign_hex(
+                        &resolved_signer.agent_key,
+                        &canonical_session_create_message(&CanonicalSessionCreate {
+                            request_id: &session_request_id,
+                            access_key_id: &resolved_signer.access_key_id,
+                            challenge_id: &challenge.challenge_id,
+                            challenge_nonce: &challenge.challenge_nonce,
+                        })?,
+                    )),
+                })
                 .await
                 .context("Failed to create agent session")?;
 
-            let signature = resolved_signer
-                .agent_key
-                .sign_bytes(&canonical_agent_message(&CanonicalSignIntent {
+            let signature = sign_hex(
+                &resolved_signer.agent_key,
+                &canonical_agent_message(&CanonicalSignIntent {
                     request_id: &request_id,
                     resolved_wallet_id: &validate.resolved_wallet_id,
                     access_key_id: &resolved_signer.access_key_id,
@@ -261,7 +433,8 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                     value: &value,
                     session_nonce: &session.session_nonce,
                     mode: signing_mode_name,
-                })?);
+                })?,
+            );
 
             let response = client
                 .submit_signature(&SignRequest {
@@ -278,7 +451,7 @@ pub async fn run(action: SignAction, runtime: &Runtime) -> Result<()> {
                     agent_proof: AgentProof {
                         access_key_id: resolved_signer.access_key_id,
                         session_nonce: session.session_nonce,
-                        signature: format!("0x{}", hex::encode(signature.to_bytes())),
+                        signature,
                     },
                 })
                 .await

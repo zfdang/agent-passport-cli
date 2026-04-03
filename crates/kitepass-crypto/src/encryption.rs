@@ -29,8 +29,9 @@ pub enum EncryptionError {
 // ── Combined Token ──────────────────────────────────────
 
 const TOKEN_PREFIX: &str = "kite_tk_";
+const TOKEN_DELIMITER: &str = "__";
 
-/// Parsed representation of `kite_tk_<access_key_id>_<secret_key>`.
+/// Parsed representation of `kite_tk_<access_key_id>__<secret_key>`.
 #[derive(Debug, Clone)]
 pub struct CombinedToken {
     pub access_key_id: String,
@@ -40,7 +41,7 @@ pub struct CombinedToken {
 impl CombinedToken {
     /// Parses a Combined Token string.
     ///
-    /// Format: `kite_tk_<access_key_id>_<secret_key>`
+    /// Format: `kite_tk_<access_key_id>__<secret_key>`
     /// where `access_key_id` starts with `aak_`.
     pub fn parse(token: &str) -> Result<Self, EncryptionError> {
         let rest = token
@@ -48,7 +49,7 @@ impl CombinedToken {
             .ok_or(EncryptionError::InvalidTokenFormat)?;
 
         let (access_key_id, secret_key) = rest
-            .rsplit_once('_')
+            .split_once(TOKEN_DELIMITER)
             .ok_or(EncryptionError::InvalidTokenFormat)?;
 
         if !access_key_id.starts_with("aak_") || access_key_id.len() < 5 {
@@ -68,7 +69,7 @@ impl CombinedToken {
 
     /// Formats a Combined Token from its components.
     pub fn format(access_key_id: &str, secret_key: &str) -> String {
-        format!("{TOKEN_PREFIX}{access_key_id}_{secret_key}")
+        format!("{TOKEN_PREFIX}{access_key_id}{TOKEN_DELIMITER}{secret_key}")
     }
 }
 
@@ -134,6 +135,9 @@ impl CryptoEnvelope {
         let salt = BASE64.decode(&self.salt)?;
         let nonce_bytes = BASE64.decode(&self.nonce)?;
         let ciphertext = BASE64.decode(&self.ciphertext)?;
+        if nonce_bytes.len() != 12 {
+            return Err(EncryptionError::DecryptionFailed);
+        }
 
         // Derive key
         let hk = Hkdf::<Sha256>::new(Some(&salt), secret_key.as_bytes());
@@ -172,7 +176,7 @@ mod tests {
         let formatted = CombinedToken::format("aak_abc123", secret);
         assert_eq!(
             formatted,
-            "kite_tk_aak_abc123_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+            "kite_tk_aak_abc123__a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
         );
 
         let parsed = CombinedToken::parse(&formatted).unwrap();
@@ -192,7 +196,7 @@ mod tests {
 
     #[test]
     fn combined_token_rejects_empty_secret() {
-        assert!(CombinedToken::parse("kite_tk_aak_abc_").is_err());
+        assert!(CombinedToken::parse("kite_tk_aak_abc__").is_err());
     }
 
     #[test]
@@ -261,5 +265,19 @@ mod tests {
         let secret = generate_secret_key();
         assert_eq!(secret.len(), 64);
         assert!(secret.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn crypto_envelope_rejects_invalid_nonce_length() {
+        let envelope = CryptoEnvelope {
+            cipher: CIPHER_AES256GCM.to_string(),
+            kdf: KDF_HKDF_SHA256.to_string(),
+            salt: BASE64.encode("salt"),
+            nonce: BASE64.encode([0u8; 8]),
+            ciphertext: BASE64.encode("ciphertext"),
+        };
+
+        let result = envelope.decrypt("secret");
+        assert!(matches!(result, Err(EncryptionError::DecryptionFailed)));
     }
 }

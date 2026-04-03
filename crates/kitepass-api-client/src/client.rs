@@ -2,14 +2,14 @@ use crate::error::ApiError;
 use crate::types::{
     AccessKeyListResponse, AccessKeyMutationRequest, AgentAccessKey, AgentSession, AuditEvent,
     AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse,
-    CreatePolicyRequest, CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse,
-    FinalizeAccessKeyRequest, ImportAttestationResponse, ImportSessionRequest,
-    ImportSessionResponse, Operation, OwnerApprovalRecord, Policy, PolicyListResponse,
-    PolicyUsageState, PrepareAccessKeyResponse, ProvisioningIntentStatusResponse,
-    RegisterAccessKeyRequest, RegisterAccessKeyResponse, SignRequest, SignResponse,
-    UploadWalletCiphertextRequest, UploadWalletCiphertextResponse, UsageResponse,
-    ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse, Wallet,
-    WalletAccessBinding, WalletListResponse, WalletMutationRequest,
+    CreatePolicyRequest, CreateSessionChallengeRequest, CreateSessionChallengeResponse,
+    CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse, FinalizeAccessKeyRequest,
+    ImportAttestationResponse, ImportSessionRequest, ImportSessionResponse, Operation,
+    OwnerApprovalRecord, Policy, PolicyListResponse, PolicyUsageState, PrepareAccessKeyResponse,
+    ProvisioningIntentStatusResponse, RegisterAccessKeyRequest, RegisterAccessKeyResponse,
+    SignRequest, SignResponse, UploadWalletCiphertextRequest, UploadWalletCiphertextResponse,
+    UsageResponse, ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse,
+    Wallet, WalletAccessBinding, WalletListResponse, WalletMutationRequest,
 };
 
 /// HTTP client for the Passport API.
@@ -328,16 +328,23 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn create_session(&self, access_key_id: &str) -> Result<AgentSession, ApiError> {
+    pub async fn create_session_challenge(
+        &self,
+        req_body: &CreateSessionChallengeRequest,
+    ) -> Result<CreateSessionChallengeResponse, ApiError> {
+        let url = format!("{}/v1/sessions/challenge", self.base_url);
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.json(req_body).send().await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn create_session(
+        &self,
+        req_body: &CreateSessionRequest,
+    ) -> Result<AgentSession, ApiError> {
         let url = format!("{}/v1/sessions", self.base_url);
-        let res = self
-            .http
-            .post(&url)
-            .json(&CreateSessionRequest {
-                access_key_id: access_key_id.to_string(),
-            })
-            .send()
-            .await?;
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
     }
 
@@ -346,7 +353,8 @@ impl PassportClient {
         req_body: &ValidateSignIntentRequest,
     ) -> Result<ValidateSignIntentResponse, ApiError> {
         let url = format!("{}/v1/sign-intents/validate", self.base_url);
-        let res = self.http.post(&url).json(req_body).send().await?;
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
     }
 

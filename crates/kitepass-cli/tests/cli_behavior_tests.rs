@@ -36,6 +36,7 @@ fn write_config(tempdir: &TempDir, api_url: Option<&str>, access_token: Option<&
         api_url: api_url.map(str::to_string),
         default_chain: None,
         access_token: access_token.map(str::to_string),
+        encrypted_access_token: None,
     };
 
     for path in config_paths(tempdir) {
@@ -196,7 +197,7 @@ async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
         .assert()
         .success()
         .stdout(contains("\"access_key_id\": \"aak_123\""))
-        .stdout(contains("\"combined_token\": \"kite_tk_aak_123_"))
+        .stdout(contains("\"combined_token\": \"kite_tk_aak_123__"))
         .stderr(contains(
             "IMPORTANT: Save the Combined Token below immediately!",
         ));
@@ -327,6 +328,12 @@ async fn login_json_flow_persists_access_token() {
 
     let saved = load_saved_config(&tempdir);
     assert_eq!(saved.access_token.as_deref(), Some("token_mock_123"));
+    assert!(saved.encrypted_access_token.is_some());
+
+    let raw_path = newest_existing_path(config_paths(&tempdir)).expect("config should exist");
+    let raw_config = fs::read_to_string(raw_path).expect("raw config should be readable");
+    assert!(!raw_config.contains("token_mock_123"));
+    assert!(raw_config.contains("encrypted_access_token"));
 
     let requests = mock_server
         .received_requests()
@@ -439,6 +446,14 @@ async fn sign_validate_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), None);
+    let key = AgentKey::generate();
+    write_agents(
+        &tempdir,
+        &AgentRegistry {
+            active_profile: Some("default".to_string()),
+            agents: vec![encrypted_identity_from_key("default", "aak_123", &key)],
+        },
+    );
     let combined_token = CombinedToken::format("aak_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
@@ -496,6 +511,10 @@ async fn sign_validate_renders_json_output() {
         serde_json::from_slice(&validate_req.body).expect("validate body should be json");
 
     assert_eq!(validate_body["access_key_id"], "aak_123");
+    assert!(validate_body["agent_proof"]["signature"]
+        .as_str()
+        .expect("validate proof should be a string")
+        .starts_with("0x"));
 }
 
 #[test]
@@ -1130,6 +1149,16 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
+        .and(path("/v1/sessions/challenge"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "challenge_id": "sch_123",
+            "access_key_id": "aak_123",
+            "challenge_nonce": "nonce_challenge_123",
+            "expires_at": "2026-03-31T00:05:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("POST"))
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
@@ -1192,6 +1221,10 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
         .iter()
         .find(|request| request.url.path() == "/v1/sessions")
         .expect("session request should be present");
+    let challenge_req = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/sessions/challenge")
+        .expect("session challenge request should be present");
     let sign_req = requests
         .iter()
         .find(|request| request.url.path() == "/v1/signatures")
@@ -1199,13 +1232,26 @@ async fn sign_submit_renders_json_output_and_sends_agent_proof() {
 
     let validate_body: serde_json::Value =
         serde_json::from_slice(&validate_req.body).expect("validate body should be json");
+    let challenge_body: serde_json::Value =
+        serde_json::from_slice(&challenge_req.body).expect("challenge body should be json");
     let session_body: serde_json::Value =
         serde_json::from_slice(&session_req.body).expect("session body should be json");
     let sign_body: serde_json::Value =
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
     assert_eq!(validate_body["wallet_id"], "wal_123");
+    assert_eq!(challenge_body["access_key_id"], "aak_123");
+    assert!(validate_body["agent_proof"]["signature"]
+        .as_str()
+        .expect("validate proof should be a string")
+        .starts_with("0x"));
     assert_eq!(session_body["access_key_id"], "aak_123");
+    assert!(session_body["request_id"].is_string());
+    assert_eq!(session_body["challenge_id"], "sch_123");
+    assert!(session_body["proof_signature"]
+        .as_str()
+        .expect("session proof should be a string")
+        .starts_with("0x"));
     assert_eq!(sign_body["wallet_id"], "wal_123");
     assert_eq!(sign_body["mode"], "sign_and_submit");
     assert_eq!(sign_body["agent_proof"]["access_key_id"], "aak_123");
@@ -1301,6 +1347,16 @@ async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
+        .and(path("/v1/sessions/challenge"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "challenge_id": "sch_profile",
+            "access_key_id": "aak_bot",
+            "challenge_nonce": "nonce_profile_challenge",
+            "expires_at": "2026-03-31T00:05:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("POST"))
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_profile",
@@ -1358,16 +1414,24 @@ async fn sign_submit_uses_token_bound_profile_when_flags_are_omitted() {
         .iter()
         .find(|request| request.url.path() == "/v1/sessions")
         .expect("session request should be present");
+    let challenge_req = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/sessions/challenge")
+        .expect("session challenge request should be present");
     let sign_req = requests
         .iter()
         .find(|request| request.url.path() == "/v1/signatures")
         .expect("sign request should be present");
 
+    let challenge_body: serde_json::Value =
+        serde_json::from_slice(&challenge_req.body).expect("challenge body should be json");
     let session_body: serde_json::Value =
         serde_json::from_slice(&session_req.body).expect("session body should be json");
     let sign_body: serde_json::Value =
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
+    assert_eq!(challenge_body["access_key_id"], "aak_bot");
     assert_eq!(session_body["access_key_id"], "aak_bot");
+    assert_eq!(session_body["challenge_id"], "sch_profile");
     assert_eq!(sign_body["access_key_id"], "aak_bot");
 }

@@ -3,6 +3,7 @@ use hpke::{
     Deserializable, Kem as KemTrait, OpModeR, OpModeS, Serializable,
 };
 use rand09::{rngs::StdRng, SeedableRng};
+use zeroize::Zeroizing;
 
 type ImportKem = X25519HkdfSha256;
 type ImportKdf = HkdfSha256;
@@ -24,7 +25,7 @@ pub enum HpkeError {
 
 #[derive(Debug, Clone)]
 pub struct RecipientKeyPair {
-    pub private_key_hex: String,
+    pub private_key_hex: Zeroizing<String>,
     pub public_key_hex: String,
 }
 
@@ -38,7 +39,7 @@ pub fn generate_recipient_keypair() -> RecipientKeyPair {
     let mut csprng = StdRng::from_os_rng();
     let (private_key, public_key) = ImportKem::gen_keypair(&mut csprng);
     RecipientKeyPair {
-        private_key_hex: hex::encode(private_key.to_bytes()),
+        private_key_hex: Zeroizing::new(hex::encode(private_key.to_bytes())),
         public_key_hex: hex::encode(public_key.to_bytes()),
     }
 }
@@ -127,7 +128,7 @@ mod tests {
         .expect("seal should succeed");
 
         let plaintext = open_from_hex(
-            &keypair.private_key_hex,
+            keypair.private_key_hex.as_str(),
             &sealed.encapsulated_key_hex,
             &sealed.ciphertext_hex,
             info.as_bytes(),
