@@ -1,4 +1,4 @@
-# Owner Token and Agent Access Key Flow
+# Principal Session Token and Agent Passport Flow
 
 This document explains how `kitepass-cli` moves from owner authentication to
 delegated agent signing in the current implementation.
@@ -6,10 +6,10 @@ delegated agent signing in the current implementation.
 Implementation note as of 2026-04-03:
 
 - owner login currently uses device-code + PKCE with browser passkey approval
-- the owner access token is stored encrypted under `~/.kitepass/config.toml`
-- `kitepass sign` requires `KITE_AGENT_TOKEN` and performs
+- the principal session token is stored encrypted under `~/.kitepass/config.toml`
+- `kitepass sign` requires `KITE_AGENT_PASSPORT_TOKEN` and performs
   `validate -> session challenge -> session create -> final submit`
-- `kitepass sign --validate` can run with either `KITE_AGENT_TOKEN` or a logged-in owner
+- `kitepass sign --validate` can run with either `KITE_AGENT_PASSPORT_TOKEN` or a logged-in owner
   session
 
 ## Identity Split
@@ -17,7 +17,7 @@ Implementation note as of 2026-04-03:
 The flow is intentionally split into two identities:
 
 - **Owner identity**
-  - used for wallet import, access-key provisioning, policy management, and
+  - used for wallet import, agent-passport provisioning, policy management, and
     other administrative actions
 - **Agent identity**
   - used at runtime by an autonomous agent to request signing within an
@@ -42,7 +42,7 @@ sequenceDiagram
     CLI->>Gateway: request device code + PKCE challenge
     CLI->>Browser: open verification URL when possible
     Browser->>Gateway: passkey sign-in + approve device login
-    Gateway-->>CLI: owner access token
+    Gateway-->>CLI: principal session token
     CLI->>CLI: encrypt token into ~/.kitepass/config.toml
 
     Owner->>CLI: kitepass policy create ...
@@ -50,12 +50,12 @@ sequenceDiagram
     Gateway->>Authz: persist policy
     Gateway-->>CLI: policy_id
 
-    Owner->>CLI: kitepass access-key create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
-    CLI->>Gateway: prepare + approve + finalize bound runtime access key
-    Gateway-->>CLI: runtime access_key_id + bindings
-    CLI-->>Owner: display runtime Combined Token
+    Owner->>CLI: kitepass agent-passport create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
+    CLI->>Gateway: prepare + approve + finalize bound runtime agent passport
+    Gateway-->>CLI: runtime agent_passport_id + bindings
+    CLI-->>Owner: display runtime Agent Passport Token
 
-    Agent->>CLI: request sign operation with KITE_AGENT_TOKEN
+    Agent->>CLI: request sign operation with KITE_AGENT_PASSPORT_TOKEN
     CLI->>CLI: parse token + decrypt inline private key
     CLI->>Gateway: validate sign intent
     Gateway-->>CLI: resolved_wallet_id
@@ -72,7 +72,7 @@ sequenceDiagram
     CLI-->>Agent: signed result
 ```
 
-## Step 1: Owner Login Produces an Owner Token
+## Step 1: Owner Login Produces a Principal Session Token
 
 The owner starts by running:
 
@@ -80,21 +80,21 @@ The owner starts by running:
 kitepass login
 ```
 
-`kitepass-cli` starts the owner authentication flow through Passport Gateway.
+`kitepass-cli` starts the principal-authentication flow through Passport Gateway.
 The CLI requests a device code, generates a PKCE verifier / challenge pair,
 opens a browser when possible, and the user completes passkey authentication
 plus device approval there.
 
-If authentication succeeds, Gateway returns an **owner access token**. The CLI:
+If authentication succeeds, Gateway returns a **principal session token**. The CLI:
 
 - encrypts that token into `~/.kitepass/config.toml`
 - stores the local decrypt secret in `~/.kitepass/access-token.secret`
 
 This token is an **administrative credential**. It is not used for runtime
-transaction signing. It is only used for owner-level actions such as:
+transaction signing. It is only used for principal-account actions such as:
 
 - importing wallets
-- creating agent access keys
+- creating agent passports
 - approving delegated authority
 - managing policies
 
@@ -104,7 +104,7 @@ Today, the most reliable signing path is policy-first:
 
 1. create a policy for the wallet
 2. activate that policy
-3. create the bound runtime access key that references the approved `policy_id`
+3. create the bound runtime agent passport that references the approved `policy_id`
 
 The commands look like this:
 
@@ -120,41 +120,41 @@ kitepass policy create \
 
 kitepass policy activate --policy-id <policy_id>
 
-kitepass access-key create \
+kitepass agent-passport create \
   --name trading-bot \
   --wallet-id <wallet_id> \
   --policy-id <policy_id>
 ```
 
-During `access-key create`, the CLI:
+During `agent-passport create`, the CLI:
 
 1. generates a new Ed25519 keypair locally
 2. derives a random secret and encrypts the private key into an inline
    `CryptoEnvelope`
-3. sends only the public key to Passport using the owner access token
+3. sends only the public key to Passport using the principal session token
 4. completes the prepare -> approve -> finalize provisioning flow
-5. prints a one-time Combined Token for the agent runtime
+5. prints a one-time Agent Passport Token for the agent runtime
 
 The important property here is that the **private key never leaves the local
-machine**. Passport only receives the public key plus the owner-approved
+machine**. Passport only receives the public key plus the principal-approved
 delegation state.
 
 After provisioning succeeds, the CLI stores the agent identity in:
 
 - `~/.kitepass/agents.toml`
 
-That record contains the local profile name, the Passport `access_key_id`, the
-public key hex, and the encrypted private-key envelope. The Combined Token
+That record contains the local profile name, the Passport `agent_passport_id`, the
+public key hex, and the encrypted private-key envelope. The Agent Passport Token
 itself is not stored on disk.
 
-## Step 3: The Agent Uses the Access Key To Call Passport
+## Step 3: The Agent Uses the Agent Passport To Call Passport
 
-At runtime, the agent does not use the owner token. It uses the **Combined
+At runtime, the agent does not use the principal session token. It uses the **Combined
 Token plus the local encrypted profile**.
 
 When the agent wants a signature, the CLI:
 
-1. parses `KITE_AGENT_TOKEN` into `access_key_id` + `secret_key`
+1. parses `KITE_AGENT_PASSPORT_TOKEN` into `agent_passport_id` + `secret_key`
 2. loads the matching encrypted profile from `agents.toml`
 3. decrypts the local private key in memory
 4. calls `validate_sign_intent`
@@ -163,13 +163,13 @@ When the agent wants a signature, the CLI:
 7. signs the challenge payload locally and creates an agent session
 8. receives a `session_nonce`
 9. builds a canonical sign intent
-10. signs that intent locally with the decrypted access-key private key
+10. signs that intent locally with the decrypted agent-passport private key
 11. sends the sign request plus the resulting `agent_proof` to Passport
 
 Passport then verifies:
 
-- the access key is registered and active
-- the access key is bound to the target wallet selected for the requested
+- the agent passport is registered and active
+- the agent passport is bound to the target wallet selected for the requested
   CAIP-2 `chain_id`
 - the requested action matches the assigned policy
 - value, destination, and quota limits are still valid
@@ -179,17 +179,17 @@ If all checks pass, the request proceeds through Policy Authorizer and then
 Vault Signer.
 
 For diagnostics, `kitepass sign --validate` can also run under the logged-in
-owner session without `KITE_AGENT_TOKEN`. That path is useful for route and
+principal session without `KITE_AGENT_PASSPORT_TOKEN`. That path is useful for route and
 policy debugging, but it is not the final runtime signing path.
 
 ## Why the Split Matters
 
 This design keeps the two trust levels separate:
 
-- The **owner token** can grant or revoke authority, but it is not meant to be
+- The **principal session token** can grant or revoke authority, but it is not meant to be
   held by an autonomous agent.
-- The **Combined Token** can unlock the local encrypted agent key, but only for
-  the specific `access_key_id` that the owner provisioned.
+- The **Agent Passport Token** can unlock the local encrypted agent key, but only for
+  the specific `agent_passport_id` that the owner provisioned.
 
 That means an agent can operate continuously without holding the owner's full
 administrative power.
@@ -198,8 +198,8 @@ administrative power.
 
 In one sentence:
 
-> The owner token is used to create and approve delegated authority, while the
-> Combined Token unlocks the encrypted local agent key that exercises that
+> The principal session token is used to create and approve delegated authority, while the
+> Agent Passport Token unlocks the encrypted local agent key that exercises that
 > authority at runtime.
 
 This gives the system a clean separation between:

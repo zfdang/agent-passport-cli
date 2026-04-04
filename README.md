@@ -44,8 +44,8 @@ The current delegated-signing flow is:
 1. log in as the owner
 2. import a wallet
 3. create and activate a policy for that wallet
-4. create a bound runtime access key attached to the wallet and policy
-5. export the one-time Combined Token for that bound key
+4. create a bound runtime agent passport attached to the wallet and policy
+5. export the one-time Agent Passport Token for that bound key
 6. validate the signing route
 7. request a signature without broadcast
 8. optionally sign and submit through the relayer
@@ -56,7 +56,7 @@ The current delegated-signing flow is:
 kitepass login
 ```
 
-This opens the browser-based device flow. On success, the CLI stores the owner session locally.
+This opens the browser-based device flow. On success, the CLI stores the principal session locally.
 
 In the current implementation, the CLI stores:
 
@@ -81,7 +81,7 @@ echo "wallet_id=${WALLET_ID}"
 
 ```bash
 POLICY_JSON="$(
-  kitepass --json policy create \
+  kitepass --json passport-policy create \
     --wallet-id "$WALLET_ID" \
     --allowed-chain eip155:8453 \
     --allowed-action transaction \
@@ -91,27 +91,27 @@ POLICY_JSON="$(
     --valid-for-hours 24
 )"
 
-POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.policy_id')"
-echo "policy_id=${POLICY_ID}"
+POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.passport_policy_id')"
+echo "passport_policy_id=${POLICY_ID}"
 
-kitepass --json policy activate --policy-id "$POLICY_ID"
+kitepass --json passport-policy activate --passport-policy-id "$POLICY_ID"
 ```
 
-### 4. Create The Bound Runtime Access Key
+### 4. Create The Bound Runtime Agent Passport
 
 ```bash
 BOUND_KEY_JSON="$(
-  kitepass --json access-key create \
+  kitepass --json agent-passport create \
     --name demo-agent \
     --wallet-id "$WALLET_ID" \
-    --policy-id "$POLICY_ID"
+    --passport-policy-id "$POLICY_ID"
 )"
 
-ACCESS_KEY_ID="$(printf '%s' "$BOUND_KEY_JSON" | jq -r '.access_key_id')"
-export KITE_AGENT_TOKEN="$(printf '%s' "$BOUND_KEY_JSON" | jq -r '.combined_token')"
+AGENT_PASSPORT_ID="$(printf '%s' "$BOUND_KEY_JSON" | jq -r '.agent_passport_id')"
+export KITE_AGENT_PASSPORT_TOKEN="$(printf '%s' "$BOUND_KEY_JSON" | jq -r '.agent_passport_token')"
 
-echo "access_key_id=${ACCESS_KEY_ID}"
-echo "combined_token_prefix=${KITE_AGENT_TOKEN:0:24}..."
+echo "agent_passport_id=${AGENT_PASSPORT_ID}"
+echo "agent_passport_token_prefix=${KITE_AGENT_PASSPORT_TOKEN:0:24}..."
 ```
 
 This command:
@@ -119,36 +119,36 @@ This command:
 - generates a new Ed25519 agent key locally
 - encrypts the private key into an inline `CryptoEnvelope`
 - stores that encrypted profile in `~/.kitepass/agents.toml`
-- prints a one-time Combined Token
+- prints a one-time Agent Passport Token
 
-The Combined Token format is:
+The Agent Passport Token format is:
 
 ```text
-kite_tk_<access_key_id>__<secret_key>
+kite_apt_<agent_passport_id>__<secret_key>
 ```
 
-The example intentionally prints only `combined_token_prefix` so the full secret does not get written to your terminal history, shell scrollback, screenshots, or CI logs.
+The example intentionally prints only `agent_passport_token_prefix` so the full secret does not get written to your terminal history, shell scrollback, screenshots, or CI logs.
 
-The full Combined Token is already available in the current shell as `KITE_AGENT_TOKEN`. That is the value an agent should use.
+The full Agent Passport Token is already available in the current shell as `KITE_AGENT_PASSPORT_TOKEN`. That is the value an agent should use.
 
 Typical usage patterns are:
 
 - run the next command in the same shell session:
 
 ```bash
-KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
   kitepass --json sign ...
 ```
 
 - launch an agent/runtime with the token injected as an environment variable:
 
 ```bash
-KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" your-agent-runtime
+KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" your-agent-runtime
 ```
 
-- if the agent runs in another terminal, container, or host, pass the full `KITE_AGENT_TOKEN` there through your normal secret-injection path
+- if the agent runs in another terminal, container, or host, pass the full `KITE_AGENT_PASSPORT_TOKEN` there through your normal secret-injection path
 
-If you lose the full token value, revoke that access key and create a new one. The CLI does not print the full token again.
+If you lose the full token value, revoke that agent passport and create a new one. The CLI does not print the full token again.
 
 ### 5. Select The Active Local Profile
 
@@ -160,7 +160,7 @@ kitepass --json profile use --name demo-agent
 
 ```bash
 kitepass --json sign --validate \
-  --access-key-id "$ACCESS_KEY_ID" \
+  --agent-passport-id "$AGENT_PASSPORT_ID" \
   --wallet-id "$WALLET_ID" \
   --chain-id eip155:8453 \
   --signing-type transaction \
@@ -169,12 +169,12 @@ kitepass --json sign --validate \
   --value 10
 ```
 
-For a first successful run, prefer passing both `--access-key-id` and `--wallet-id` explicitly. Auto wallet selection is supported, but explicit routing is easier to debug when you are bootstrapping a new environment.
+For a first successful run, prefer passing both `--agent-passport-id` and `--wallet-id` explicitly. Auto wallet selection is supported, but explicit routing is easier to debug when you are bootstrapping a new environment.
 
 `kitepass sign --validate` can run in two modes:
 
-- with `KITE_AGENT_TOKEN`, the CLI signs a validate proof locally with the decrypted agent key
-- with only a logged-in owner session, the CLI can still ask Gateway to validate the route as an owner-facing diagnostic step
+- with `KITE_AGENT_PASSPORT_TOKEN`, the CLI signs a validate proof locally with the decrypted agent key
+- with only a logged-in principal session, the CLI can still ask Gateway to validate the route as an owner-facing diagnostic step
 
 ### 7. Sign Without Submitting
 
@@ -182,9 +182,9 @@ If the agent wants the final wallet signature but will broadcast the transaction
 
 ```bash
 SIGN_JSON="$(
-  KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+  KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
     kitepass --json sign \
-      --access-key-id "$ACCESS_KEY_ID" \
+      --agent-passport-id "$AGENT_PASSPORT_ID" \
       --wallet-id "$WALLET_ID" \
       --chain-id eip155:8453 \
       --signing-type transaction \
@@ -203,10 +203,10 @@ In this default mode, `kitepass sign` uses `signature_only`. This is the "sign" 
 
 ```bash
 SIGN_JSON="$(
-  KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+  KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
     kitepass --json sign \
       --broadcast \
-      --access-key-id "$ACCESS_KEY_ID" \
+      --agent-passport-id "$AGENT_PASSPORT_ID" \
       --wallet-id "$WALLET_ID" \
       --chain-id eip155:8453 \
       --signing-type transaction \
@@ -219,7 +219,7 @@ OPERATION_ID="$(printf '%s' "$SIGN_JSON" | jq -r '.operation_id')"
 echo "operation_id=${OPERATION_ID}"
 ```
 
-`kitepass sign` always requires `KITE_AGENT_TOKEN` for signing modes. Internally, the CLI performs:
+`kitepass sign` always requires `KITE_AGENT_PASSPORT_TOKEN` for signing modes. Internally, the CLI performs:
 
 1. `validate_sign_intent`
 2. `create_session_challenge`
@@ -241,32 +241,32 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
 
 - `~/.kitepass/config.toml`
   - API settings
-  - encrypted owner access token envelope
+  - encrypted principal session token envelope
 - `~/.kitepass/access-token.secret`
-  - local secret used to decrypt the stored owner token
+  - local secret used to decrypt the stored principal session token
 - `~/.kitepass/agents.toml`
   - local agent profiles
   - encrypted inline `CryptoEnvelope` records for agent private keys
 
 ## Troubleshooting
 
-- `kitepass sign` requires `KITE_AGENT_TOKEN`
-  - if the token is lost, revoke that access key and create a new one
-- `kitepass sign --validate` works with either a logged-in owner session or `KITE_AGENT_TOKEN`
-  - `kitepass sign` and `kitepass sign --broadcast` are stricter and require `KITE_AGENT_TOKEN`
+- `kitepass sign` requires `KITE_AGENT_PASSPORT_TOKEN`
+  - if the token is lost, revoke that agent passport and create a new one
+- `kitepass sign --validate` works with either a logged-in principal session or `KITE_AGENT_PASSPORT_TOKEN`
+  - `kitepass sign` and `kitepass sign --broadcast` are stricter and require `KITE_AGENT_PASSPORT_TOKEN`
 - `kitepass sign` without `--broadcast` returns the final signature only
   - add `--broadcast` only when you want Passport to forward the transaction to the relayer
 - `wallet import` currently supports the EVM chain family only
   - accepted aliases are normalized to `evm`
-- `policy create` must happen before the bound runtime key is created
-  - create the policy first, then mint the bound runtime key with `--wallet-id` and `--policy-id`
+- `passport-policy create` must happen before the agent passport is created
+  - create the policy first, then create the agent passport with `--wallet-id` and `--passport-policy-id`
 - if `kitepass sign` says no local encrypted profile was found
-  - recreate the access key on the same machine, or sync `~/.kitepass/agents.toml`
+  - recreate the agent passport on the same machine, or sync `~/.kitepass/agents.toml`
 
 ## Additional Docs
 
 - [CLI manual](./docs/cli-manual.md)
-- [Owner token and agent access-key flow](./docs/owner-token-and-agent-access-key-flow.md)
+- [Principal session token and agent passport flow](./docs/principal-auth-and-agent-passport-flow.md)
 - [Agent security design](./docs/agent-security-design.md)
 - [Wallet import security notes](./docs/security-wallet-import.md)
 - [Development guide](./docs/development.md)

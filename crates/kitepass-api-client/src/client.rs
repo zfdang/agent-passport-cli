@@ -1,15 +1,16 @@
 use crate::error::ApiError;
 use crate::types::{
-    AccessKeyListResponse, AccessKeyMutationRequest, AgentAccessKey, AgentSession, AuditEvent,
-    AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse, ChainFamily,
-    CreatePolicyRequest, CreateSessionChallengeRequest, CreateSessionChallengeResponse,
-    CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse, FinalizeAccessKeyRequest,
-    ImportAttestationResponse, ImportSessionRequest, ImportSessionResponse, Operation,
-    OwnerApprovalRecord, Policy, PolicyListResponse, PolicyUsageState, PrepareAccessKeyResponse,
-    ProvisioningIntentStatusResponse, RegisterAccessKeyRequest, RegisterAccessKeyResponse,
-    SignRequest, SignResponse, UploadWalletCiphertextRequest, UploadWalletCiphertextResponse,
-    UsageResponse, ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse,
-    Wallet, WalletAccessBinding, WalletListResponse, WalletMutationRequest,
+    AgentPassport, AgentPassportListResponse, AgentPassportMutationRequest, AgentSession,
+    AuditEvent, AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse,
+    ChainFamily, CreatePassportPolicyRequest, CreateSessionChallengeRequest,
+    CreateSessionChallengeResponse, CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse,
+    FinalizeAgentPassportRequest, ImportAttestationResponse, ImportSessionRequest,
+    ImportSessionResponse, Operation, PassportPolicy, PassportPolicyUsageState, PolicyListResponse,
+    PrepareAgentPassportResponse, PrincipalApprovalRecord, ProvisioningIntentStatusResponse,
+    RegisterAgentPassportRequest, RegisterAgentPassportResponse, SignRequest, SignResponse,
+    UploadWalletCiphertextRequest, UploadWalletCiphertextResponse, UsageResponse,
+    ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse, Wallet,
+    WalletAgentPassportBinding, WalletListResponse, WalletMutationRequest,
 };
 
 /// HTTP client for the Passport API.
@@ -68,7 +69,7 @@ impl PassportClient {
         &self,
         req_body: &DeviceCodeRequest,
     ) -> Result<DeviceCodeResponse, ApiError> {
-        let url = format!("{}/v1/owner-auth/device-code", self.base_url);
+        let url = format!("{}/v1/principal-auth/device-code", self.base_url);
         let res = self.http.post(&url).json(req_body).send().await?;
         Self::handle_res(res).await
     }
@@ -78,7 +79,7 @@ impl PassportClient {
         device_code: &str,
         req_body: &AuthPollRequest,
     ) -> Result<AuthPollResponse, ApiError> {
-        let url = format!("{}/v1/owner-auth/poll/{}", self.base_url, device_code);
+        let url = format!("{}/v1/principal-auth/poll/{}", self.base_url, device_code);
         let res = self.http.post(&url).json(req_body).send().await?;
         Self::handle_res(res).await
     }
@@ -124,11 +125,11 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn register_access_key(
+    pub async fn register_agent_passport(
         &self,
-        req_body: &RegisterAccessKeyRequest,
-    ) -> Result<PrepareAccessKeyResponse, ApiError> {
-        let url = format!("{}/v1/agent-access-keys:prepare", self.base_url);
+        req_body: &RegisterAgentPassportRequest,
+    ) -> Result<PrepareAgentPassportResponse, ApiError> {
+        let url = format!("{}/v1/agent-passports:prepare", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
@@ -147,7 +148,7 @@ impl PassportClient {
     pub async fn approve_provisioning_intent(
         &self,
         intent_id: &str,
-    ) -> Result<OwnerApprovalRecord, ApiError> {
+    ) -> Result<PrincipalApprovalRecord, ApiError> {
         let url = format!(
             "{}/v1/provisioning-intents/{}/approve",
             self.base_url, intent_id
@@ -157,11 +158,11 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn finalize_access_key(
+    pub async fn finalize_agent_passport(
         &self,
-        req_body: &FinalizeAccessKeyRequest,
-    ) -> Result<RegisterAccessKeyResponse, ApiError> {
-        let url = format!("{}/v1/agent-access-keys", self.base_url);
+        req_body: &FinalizeAgentPassportRequest,
+    ) -> Result<RegisterAgentPassportResponse, ApiError> {
+        let url = format!("{}/v1/agent-passports", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
@@ -195,85 +196,114 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn list_access_keys(&self) -> Result<Vec<AgentAccessKey>, ApiError> {
-        let url = format!("{}/v1/agent-access-keys", self.base_url);
+    pub async fn list_agent_passports(&self) -> Result<Vec<AgentPassport>, ApiError> {
+        let url = format!("{}/v1/agent-passports", self.base_url);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
-        Ok(Self::handle_res::<AccessKeyListResponse>(res)
+        Ok(Self::handle_res::<AgentPassportListResponse>(res)
             .await?
-            .access_keys)
+            .agent_passports)
     }
 
-    pub async fn get_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
-        let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
+    pub async fn get_agent_passport(
+        &self,
+        agent_passport_id: &str,
+    ) -> Result<AgentPassport, ApiError> {
+        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn freeze_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
-        let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
+    pub async fn freeze_agent_passport(
+        &self,
+        agent_passport_id: &str,
+    ) -> Result<AgentPassport, ApiError> {
+        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(&AccessKeyMutationRequest::Freeze).send().await?;
+        let res = req
+            .json(&AgentPassportMutationRequest::Freeze)
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 
-    pub async fn revoke_access_key(&self, access_key_id: &str) -> Result<AgentAccessKey, ApiError> {
-        let url = format!("{}/v1/agent-access-keys/{}", self.base_url, access_key_id);
+    pub async fn revoke_agent_passport(
+        &self,
+        agent_passport_id: &str,
+    ) -> Result<AgentPassport, ApiError> {
+        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req.json(&AccessKeyMutationRequest::Revoke).send().await?;
+        let res = req
+            .json(&AgentPassportMutationRequest::Revoke)
+            .send()
+            .await?;
         Self::handle_res(res).await
     }
 
     pub async fn list_bindings(
         &self,
-        access_key_id: &str,
-    ) -> Result<Vec<WalletAccessBinding>, ApiError> {
+        agent_passport_id: &str,
+    ) -> Result<Vec<WalletAgentPassportBinding>, ApiError> {
         let url = format!(
-            "{}/v1/agent-access-keys/{}/bindings",
-            self.base_url, access_key_id
+            "{}/v1/agent-passports/{}/bindings",
+            self.base_url, agent_passport_id
         );
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Ok(Self::handle_res::<BindingListResponse>(res).await?.bindings)
     }
 
-    pub async fn get_access_key_usage(
+    pub async fn get_agent_passport_usage(
         &self,
-        access_key_id: &str,
-    ) -> Result<Option<PolicyUsageState>, ApiError> {
+        agent_passport_id: &str,
+    ) -> Result<Option<PassportPolicyUsageState>, ApiError> {
         let url = format!(
-            "{}/v1/agent-access-keys/{}/usage",
-            self.base_url, access_key_id
+            "{}/v1/agent-passports/{}/usage",
+            self.base_url, agent_passport_id
         );
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Ok(Self::handle_res::<UsageResponse>(res).await?.usage)
     }
 
-    pub async fn list_policies(&self) -> Result<Vec<Policy>, ApiError> {
-        let url = format!("{}/v1/policies", self.base_url);
+    pub async fn list_policies(&self) -> Result<Vec<PassportPolicy>, ApiError> {
+        let url = format!("{}/v1/passport-policies", self.base_url);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
-        Ok(Self::handle_res::<PolicyListResponse>(res).await?.policies)
+        Ok(Self::handle_res::<PolicyListResponse>(res)
+            .await?
+            .passport_policies)
     }
 
-    pub async fn get_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
+    pub async fn get_policy(&self, passport_policy_id: &str) -> Result<PassportPolicy, ApiError> {
+        let url = format!(
+            "{}/v1/passport-policies/{}",
+            self.base_url, passport_policy_id
+        );
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn create_policy(&self, req_body: &CreatePolicyRequest) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies", self.base_url);
+    pub async fn create_policy(
+        &self,
+        req_body: &CreatePassportPolicyRequest,
+    ) -> Result<PassportPolicy, ApiError> {
+        let url = format!("{}/v1/passport-policies", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn activate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
+    pub async fn activate_policy(
+        &self,
+        passport_policy_id: &str,
+    ) -> Result<PassportPolicy, ApiError> {
+        let url = format!(
+            "{}/v1/passport-policies/{}",
+            self.base_url, passport_policy_id
+        );
         let req = self.maybe_auth(self.http.post(&url));
         let res = req
             .json(&serde_json::json!({ "operation": "activate" }))
@@ -282,8 +312,14 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn deactivate_policy(&self, policy_id: &str) -> Result<Policy, ApiError> {
-        let url = format!("{}/v1/policies/{}", self.base_url, policy_id);
+    pub async fn deactivate_policy(
+        &self,
+        passport_policy_id: &str,
+    ) -> Result<PassportPolicy, ApiError> {
+        let url = format!(
+            "{}/v1/passport-policies/{}",
+            self.base_url, passport_policy_id
+        );
         let req = self.maybe_auth(self.http.post(&url));
         let res = req
             .json(&serde_json::json!({ "operation": "deactivate" }))

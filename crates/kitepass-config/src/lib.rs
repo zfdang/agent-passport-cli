@@ -10,7 +10,7 @@ use thiserror::Error;
 
 pub use agents::{
     env_agent_token, load_agent_registry_default, validate_profile_name, AgentIdentity,
-    AgentRegistry, AGENT_PROFILE_ENV, AGENT_TOKEN_ENV, DEFAULT_AGENT_PROFILE,
+    AgentRegistry, AGENT_PASSPORT_TOKEN_ENV, AGENT_PROFILE_ENV, DEFAULT_AGENT_PROFILE,
 };
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
@@ -33,7 +33,9 @@ pub enum ConfigError {
     InvalidProfileName(String),
     #[error("missing home directory for {0}")]
     MissingHomeDirectory(&'static str),
-    #[error("invalid Combined Token format: expected kite_tk_<access_key_id>__<secret_key>")]
+    #[error(
+        "invalid Agent Passport Token format: expected kite_apt_<agent_passport_id>__<secret_key>"
+    )]
     InvalidToken,
     #[error("token encryption error: {0}")]
     Encryption(#[from] EncryptionError),

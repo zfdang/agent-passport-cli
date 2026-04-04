@@ -7,12 +7,12 @@ use crate::{agents_path, save_toml_secure, ConfigError};
 
 pub const DEFAULT_AGENT_PROFILE: &str = "default";
 pub const AGENT_PROFILE_ENV: &str = "KITE_PROFILE";
-pub const AGENT_TOKEN_ENV: &str = "KITE_AGENT_TOKEN";
+pub const AGENT_PASSPORT_TOKEN_ENV: &str = "KITE_AGENT_PASSPORT_TOKEN";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentIdentity {
     pub name: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub public_key_hex: String,
     pub encrypted_key: CryptoEnvelope,
 }
@@ -24,9 +24,9 @@ pub struct AgentRegistry {
     pub agents: Vec<AgentIdentity>,
 }
 
-/// Returns the Combined Token from `KITE_AGENT_TOKEN` environment variable, if set.
+/// Returns the Agent Passport Token from `KITE_AGENT_PASSPORT_TOKEN` environment variable, if set.
 pub fn env_agent_token() -> Option<String> {
-    std::env::var(AGENT_TOKEN_ENV)
+    std::env::var(AGENT_PASSPORT_TOKEN_ENV)
         .ok()
         .filter(|value| !value.is_empty())
 }
@@ -64,10 +64,10 @@ impl AgentRegistry {
         self.agents.iter().find(|agent| agent.name == name)
     }
 
-    pub fn get_by_access_key_id(&self, access_key_id: &str) -> Option<&AgentIdentity> {
+    pub fn get_by_agent_passport_id(&self, agent_passport_id: &str) -> Option<&AgentIdentity> {
         self.agents
             .iter()
-            .find(|agent| agent.access_key_id == access_key_id)
+            .find(|agent| agent.agent_passport_id == agent_passport_id)
     }
 
     pub fn upsert(&mut self, agent: AgentIdentity) -> Result<(), ConfigError> {
@@ -153,7 +153,7 @@ mod tests {
         registry
             .upsert(AgentIdentity {
                 name: "default".to_string(),
-                access_key_id: "aak_123".to_string(),
+                agent_passport_id: "agp_123".to_string(),
                 public_key_hex: "abc".to_string(),
                 encrypted_key: test_envelope(),
             })
@@ -164,7 +164,7 @@ mod tests {
         let loaded = AgentRegistry::load(&path).unwrap();
         assert_eq!(loaded.active_profile.as_deref(), Some("default"));
         assert_eq!(loaded.agents.len(), 1);
-        assert_eq!(loaded.agents[0].access_key_id, "aak_123");
+        assert_eq!(loaded.agents[0].agent_passport_id, "agp_123");
     }
 
     #[test]
@@ -174,13 +174,13 @@ mod tests {
             agents: vec![
                 AgentIdentity {
                     name: "default".to_string(),
-                    access_key_id: "aak_default".to_string(),
+                    agent_passport_id: "agp_default".to_string(),
                     public_key_hex: "abc".to_string(),
                     encrypted_key: test_envelope(),
                 },
                 AgentIdentity {
                     name: "bot".to_string(),
-                    access_key_id: "aak_bot".to_string(),
+                    agent_passport_id: "agp_bot".to_string(),
                     public_key_hex: "def".to_string(),
                     encrypted_key: test_envelope(),
                 },
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn env_agent_token_returns_none_when_unset() {
         unsafe {
-            std::env::remove_var(AGENT_TOKEN_ENV);
+            std::env::remove_var(AGENT_PASSPORT_TOKEN_ENV);
         }
         assert!(env_agent_token().is_none());
     }

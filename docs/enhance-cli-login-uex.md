@@ -17,7 +17,7 @@ As of 2026-04-03, the CLI uses a single owner-login model:
 4. the owner signs in with passkey / WebAuthn in the browser
 5. the owner approves the pending device login
 6. the CLI polls the device-code endpoint with the PKCE verifier
-7. Gateway returns an owner access token
+7. Gateway returns a principal session token
 8. the CLI stores that token encrypted in `~/.kitepass/config.toml`
 
 ## Why This Proposal Is Superseded

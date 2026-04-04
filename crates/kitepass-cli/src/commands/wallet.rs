@@ -104,8 +104,8 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
             };
 
             let aad = ImportAad {
-                owner_id: session_res.channel_binding.owner_id.clone(),
-                owner_session_id: session_res.channel_binding.owner_session_id.clone(),
+                principal_account_id: session_res.channel_binding.principal_account_id.clone(),
+                principal_session_id: session_res.channel_binding.principal_session_id.clone(),
                 request_id: session_res.channel_binding.request_id.clone(),
                 vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
             };

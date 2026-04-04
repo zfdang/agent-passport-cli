@@ -13,7 +13,7 @@ async fn test_login_device_flow() {
 
     // Mock device-code request
     Mock::given(method("POST"))
-        .and(path("/v1/owner-auth/device-code"))
+        .and(path("/v1/principal-auth/device-code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "device_code": "dev_123",
             "user_code": "USER-CODE",
@@ -26,7 +26,7 @@ async fn test_login_device_flow() {
 
     // Mock poll request
     Mock::given(method("POST"))
-        .and(path("/v1/owner-auth/poll/dev_123"))
+        .and(path("/v1/principal-auth/poll/dev_123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "token_mock_123",
             "error": null
@@ -84,8 +84,8 @@ async fn test_wallet_hybrid_import() {
                 "authorization_model": "dual_sign_authorization_tee_signer"
             },
             "channel_binding": {
-                "owner_id": "own_dev",
-                "owner_session_id": "oas_dev",
+                "principal_account_id": "pac_dev",
+                "principal_session_id": "pss_dev",
                 "request_id": "req_dev"
             },
             "expires_at": "2026-03-31T00:10:00Z"
@@ -155,8 +155,8 @@ async fn test_wallet_hybrid_import() {
         .unwrap();
 
     let aad = ImportAad {
-        owner_id: session_res.channel_binding.owner_id.clone(),
-        owner_session_id: session_res.channel_binding.owner_session_id.clone(),
+        principal_account_id: session_res.channel_binding.principal_account_id.clone(),
+        principal_session_id: session_res.channel_binding.principal_session_id.clone(),
         request_id: session_res.channel_binding.request_id.clone(),
         vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
     };
@@ -209,7 +209,7 @@ async fn test_owner_query_surfaces() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallets": [{
                 "wallet_id": "wal_123",
-                "owner_id": "own_dev",
+                "principal_account_id": "pac_dev",
                 "chain_family": "evm",
                 "status": "active",
                 "key_blob_ref": "vault://wallets/wal_123",
@@ -222,11 +222,11 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys"))
+        .and(path("/v1/agent-passports"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_keys": [{
-                "access_key_id": "aak_123",
-                "owner_id": "own_dev",
+            "agent_passports": [{
+                "agent_passport_id": "agp_123",
+                "principal_account_id": "pac_dev",
                 "public_key": "abcd",
                 "key_alg": "ed25519",
                 "key_address": "ed25519:abcd",
@@ -240,14 +240,14 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys/aak_123/bindings"))
+        .and(path("/v1/agent-passports/agp_123/bindings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "bindings": [{
                 "binding_id": "bind_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "wallet_id": "wal_123",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "status": "active",
                 "is_default": true,
                 "selection_priority": 0
@@ -257,14 +257,14 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys/aak_123/usage"))
+        .and(path("/v1/agent-passports/agp_123/usage"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "usage": {
                 "binding_id": "bind_123",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "wallet_id": "wal_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "lifetime_spent": "10",
                 "daily_window_started_at": "2026-03-29T00:00:00Z",
                 "daily_spent": "5",
@@ -278,13 +278,13 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/policies"))
+        .and(path("/v1/passport-policies"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "policies": [{
-                "policy_id": "pol_123",
+                "passport_policy_id": "pol_123",
                 "binding_id": "bind_123",
                 "wallet_id": "wal_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "allowed_chains": ["eip155:8453"],
                 "allowed_actions": ["transaction"],
                 "max_single_amount": "100",
@@ -308,12 +308,12 @@ async fn test_owner_query_surfaces() {
                 "trace_id": "trace_123",
                 "request_id": "req_123",
                 "wallet_id": "wal_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "chain_id": "eip155:8453",
                 "payload_hash": "0xdeadbeef",
                 "outcome": "success",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "permit_id": "permit_123",
                 "enclave_receipt": "receipt_123",
                 "previous_event_hash": "root",
@@ -358,16 +358,16 @@ async fn test_owner_query_surfaces() {
     assert_eq!(wallets.len(), 1);
     assert_eq!(wallets[0].wallet_id, "wal_123");
 
-    let access_keys = client.list_access_keys().await.unwrap();
-    assert_eq!(access_keys.len(), 1);
-    assert_eq!(access_keys[0].access_key_id, "aak_123");
+    let agent_passports = client.list_agent_passports().await.unwrap();
+    assert_eq!(agent_passports.len(), 1);
+    assert_eq!(agent_passports[0].agent_passport_id, "agp_123");
 
-    let bindings = client.list_bindings("aak_123").await.unwrap();
+    let bindings = client.list_bindings("agp_123").await.unwrap();
     assert_eq!(bindings.len(), 1);
-    assert_eq!(bindings[0].policy_id, "pol_123");
+    assert_eq!(bindings[0].passport_policy_id, "pol_123");
 
     let usage = client
-        .get_access_key_usage("aak_123")
+        .get_agent_passport_usage("agp_123")
         .await
         .unwrap()
         .unwrap();
@@ -375,7 +375,7 @@ async fn test_owner_query_surfaces() {
 
     let policies = client.list_policies().await.unwrap();
     assert_eq!(policies.len(), 1);
-    assert_eq!(policies[0].policy_id, "pol_123");
+    assert_eq!(policies[0].passport_policy_id, "pol_123");
 
     let events = client.list_audit_events(None).await.unwrap();
     assert_eq!(events.len(), 1);
@@ -396,7 +396,7 @@ async fn test_agent_signing_surfaces() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "challenge_nonce": "nonce_challenge_123",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -407,7 +407,7 @@ async fn test_agent_signing_surfaces() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "session_nonce": "nonce_123",
             "status": "active",
             "expires_at": "2026-03-29T00:05:00Z"
@@ -421,8 +421,8 @@ async fn test_agent_signing_surfaces() {
             "request_id": "req_123",
             "valid": true,
             "resolved_wallet_id": "wal_123",
-            "policy_id": "pol_123",
-            "policy_version": 1,
+            "passport_policy_id": "pol_123",
+            "passport_policy_version": 1,
             "normalized": {
                 "wallet_id": "wal_123",
                 "chain_id": "eip155:8453",
@@ -450,13 +450,13 @@ async fn test_agent_signing_surfaces() {
     let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
     let _challenge = client
         .create_session_challenge(&CreateSessionChallengeRequest {
-            access_key_id: "aak_123".to_string(),
+            agent_passport_id: "agp_123".to_string(),
         })
         .await
         .unwrap();
     let session = client
         .create_session(&CreateSessionRequest {
-            access_key_id: "aak_123".to_string(),
+            agent_passport_id: "agp_123".to_string(),
             request_id: Some("req_session_123".to_string()),
             challenge_id: Some("sch_123".to_string()),
             proof_signature: Some("0xproof".to_string()),
@@ -470,7 +470,7 @@ async fn test_agent_signing_surfaces() {
             request_id: "req_123".to_string(),
             wallet_id: None,
             wallet_selector: Some("auto".to_string()),
-            access_key_id: "aak_123".to_string(),
+            agent_passport_id: "agp_123".to_string(),
             chain_id: "eip155:8453".to_string(),
             signing_type: "transaction".to_string(),
             payload: "0xdeadbeef".to_string(),
@@ -490,7 +490,7 @@ async fn test_agent_signing_surfaces() {
             request_id: "req_123".to_string(),
             idempotency_key: "idem_123".to_string(),
             wallet_id: "wal_123".to_string(),
-            access_key_id: "aak_123".to_string(),
+            agent_passport_id: "agp_123".to_string(),
             chain_id: "eip155:8453".to_string(),
             signing_type: "transaction".to_string(),
             mode: SigningMode::SignatureOnly,
@@ -498,7 +498,7 @@ async fn test_agent_signing_surfaces() {
             destination: "0xabc".to_string(),
             value: "10".to_string(),
             agent_proof: AgentProof {
-                access_key_id: "aak_123".to_string(),
+                agent_passport_id: "agp_123".to_string(),
                 session_nonce: "nonce_123".to_string(),
                 signature: "0xagentsig".to_string(),
             },
