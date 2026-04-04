@@ -1,5 +1,5 @@
 use crate::{
-    cli::AccessKeyAction,
+    cli::AgentPassportAction,
     commands::{load_agent_registry, load_cli_config},
     error::CliError,
     runtime::Runtime,
@@ -7,28 +7,29 @@ use crate::{
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use kitepass_api_client::{
-    BindingInput, BindingResult, FinalizeAccessKeyRequest, PassportClient, RegisterAccessKeyRequest,
+    BindingInput, BindingResult, FinalizeAgentPassportRequest, PassportClient,
+    RegisterAgentPassportRequest,
 };
 use kitepass_config::{AgentIdentity, DEFAULT_AGENT_PROFILE};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::{generate_secret_key, CombinedToken, CryptoEnvelope};
+use kitepass_crypto::encryption::{generate_secret_key, AgentPassportToken, CryptoEnvelope};
 use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 #[derive(Serialize)]
-struct AccessKeyCreateOutput<'a> {
+struct AgentPassportCreateOutput<'a> {
     profile_name: &'a str,
-    access_key_id: &'a str,
+    agent_passport_id: &'a str,
     status: &'a str,
     public_key: &'a str,
-    combined_token: &'a str,
+    agent_passport_token: &'a str,
     bindings: &'a [BindingResult],
     activated: bool,
 }
 
-pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
+pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
     let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
@@ -41,17 +42,17 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
         .with_token(token);
 
     match action {
-        AccessKeyAction::List => {
-            let access_keys = client
-                .list_access_keys()
+        AgentPassportAction::List => {
+            let agent_passports = client
+                .list_agent_passports()
                 .await
-                .context("Failed to list access keys")?;
-            runtime.print_data(&access_keys)?;
+                .context("Failed to list agent passports")?;
+            runtime.print_data(&agent_passports)?;
         }
-        AccessKeyAction::Create {
+        AgentPassportAction::Create {
             name,
             wallet_id,
-            policy_id,
+            passport_policy_id,
             no_activate,
         } => {
             let mut registry =
@@ -61,10 +62,10 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "access_key.create",
+                    "action": "agent_passport.create",
                     "profile_name": profile_name,
                     "wallet_id": wallet_id,
-                    "policy_id": policy_id,
+                    "passport_policy_id": passport_policy_id,
                 }))?;
                 return Ok(());
             }
@@ -74,10 +75,10 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             }
 
             if profile_name == DEFAULT_AGENT_PROFILE {
-                runtime.progress("Generating new Ed25519 Agent Access Key for default profile...");
+                runtime.progress("Generating new Ed25519 Agent Passport for default profile...");
             } else {
                 runtime.progress(format!(
-                    "Generating new Ed25519 Agent Access Key for profile `{profile_name}`..."
+                    "Generating new Ed25519 Agent Passport for profile `{profile_name}`..."
                 ));
             }
 
@@ -85,7 +86,7 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             let key = AgentKey::generate();
             let pubkey_hex = key.public_key_hex();
 
-            // 2. Generate a secret key for the Combined Token and encrypt the private key
+            // 2. Generate a secret key for the Agent Passport Token and encrypt the private key
             let secret_key = generate_secret_key();
             let pem = key
                 .export_pem()
@@ -95,16 +96,16 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
 
             // 3. Register public key on Passport Gateway
             runtime.progress(format!("Registering public key with Gateway: {pubkey_hex}"));
-            let bindings = match (wallet_id.clone(), policy_id.clone()) {
-                (Some(wallet_id), Some(policy_id)) => {
+            let bindings = match (wallet_id.clone(), passport_policy_id.clone()) {
+                (Some(wallet_id), Some(passport_policy_id)) => {
                     let policy = client
-                        .get_policy(&policy_id)
+                        .get_policy(&passport_policy_id)
                         .await
-                        .with_context(|| format!("Failed to get policy {policy_id}"))?;
+                        .with_context(|| format!("Failed to get policy {passport_policy_id}"))?;
                     vec![BindingInput {
                         wallet_id,
-                        policy_id,
-                        policy_version: policy.version,
+                        passport_policy_id,
+                        passport_policy_version: policy.version,
                         is_default: true,
                         selection_priority: 0,
                     }]
@@ -112,11 +113,11 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 (None, None) => Vec::new(),
                 _ => {
                     anyhow::bail!(
-                        "`--wallet-id` and `--policy-id` must be provided together when provisioning an active delegated authority"
+                        "`--wallet-id` and `--passport-policy-id` must be provided together when provisioning an active delegated authority"
                     );
                 }
             };
-            let request = RegisterAccessKeyRequest {
+            let request = RegisterAgentPassportRequest {
                 public_key: pubkey_hex.clone(),
                 key_address: format!("ed25519:{}", &pubkey_hex[..16]),
                 expires_at: (Utc::now() + Duration::days(365)).to_rfc3339(),
@@ -124,9 +125,9 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
             };
             let prepared = client
-                .register_access_key(&request)
+                .register_agent_passport(&request)
                 .await
-                .context("Failed to prepare access key provisioning")?;
+                .context("Failed to prepare agent passport provisioning")?;
             runtime.progress(format!(
                 "Prepared provisioning intent: {}",
                 prepared.intent_id
@@ -136,18 +137,18 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to approve provisioning intent")?;
             let res = client
-                .finalize_access_key(&FinalizeAccessKeyRequest {
+                .finalize_agent_passport(&FinalizeAgentPassportRequest {
                     intent_id: prepared.intent_id.clone(),
-                    owner_approval_id: approval.owner_approval_id.clone(),
+                    principal_approval_id: approval.principal_approval_id.clone(),
                     idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
                 })
                 .await
-                .context("Failed to finalize access key provisioning")?;
+                .context("Failed to finalize agent passport provisioning")?;
 
             // 4. Persist agent profile with encrypted key inline
             registry.upsert(AgentIdentity {
                 name: profile_name.clone(),
-                access_key_id: res.access_key_id.clone(),
+                agent_passport_id: res.agent_passport_id.clone(),
                 public_key_hex: pubkey_hex.clone(),
                 encrypted_key,
             })?;
@@ -171,9 +172,11 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
                 ));
             }
 
-            // 5. Build and display the Combined Token
-            let combined_token =
-                Zeroizing::new(CombinedToken::format(&res.access_key_id, &secret_key));
+            // 5. Build and display the Agent Passport Token
+            let agent_passport_token = Zeroizing::new(AgentPassportToken::format(
+                &res.agent_passport_id,
+                &secret_key,
+            ));
 
             // Keep the owner config on disk for API/base settings only.
             if let Err(error) = config.save_default() {
@@ -181,80 +184,82 @@ pub async fn run(action: AccessKeyAction, runtime: &Runtime) -> Result<()> {
             }
 
             runtime.important("╔══════════════════════════════════════════════════════════╗");
-            runtime.important("║  IMPORTANT: Save the Combined Token below immediately!   ║");
+            runtime.important("║  IMPORTANT: Save the Agent Passport Token below immediately!   ║");
             runtime.important("║  It will NOT be displayed again.                         ║");
             runtime.important("║  If lost, revoke this key and create a new one.          ║");
             runtime.important("╚══════════════════════════════════════════════════════════╝");
 
-            runtime.print_data(&AccessKeyCreateOutput {
+            runtime.print_data(&AgentPassportCreateOutput {
                 profile_name: &profile_name,
-                access_key_id: &res.access_key_id,
+                agent_passport_id: &res.agent_passport_id,
                 status: &res.status,
                 public_key: &pubkey_hex,
-                combined_token: combined_token.as_str(),
+                agent_passport_token: agent_passport_token.as_str(),
                 bindings: &res.bindings,
                 activated: !no_activate,
             })?;
 
             if !persistence_errors.is_empty() {
                 anyhow::bail!(
-                    "Access key was created, but local persistence is incomplete: {}. Save the Combined Token above, then fix the local config/registry or revoke and recreate the access key if needed.",
+                    "Agent Passport was created, but local persistence is incomplete: {}. Save the Agent Passport Token above, then fix the local config/registry or revoke and recreate the agent passport if needed.",
                     persistence_errors.join("; ")
                 );
             }
         }
-        AccessKeyAction::Get { access_key_id } => {
-            let access_key = client
-                .get_access_key(&access_key_id)
+        AgentPassportAction::Get { agent_passport_id } => {
+            let agent_passport = client
+                .get_agent_passport(&agent_passport_id)
                 .await
-                .with_context(|| format!("Failed to get access key {access_key_id}"))?;
+                .with_context(|| format!("Failed to get agent passport {agent_passport_id}"))?;
             let bindings = client
-                .list_bindings(&access_key_id)
+                .list_bindings(&agent_passport_id)
                 .await
                 .with_context(|| {
-                    format!("Failed to list bindings for access key {access_key_id}")
+                    format!("Failed to list bindings for agent passport {agent_passport_id}")
                 })?;
             let usage = client
-                .get_access_key_usage(&access_key_id)
+                .get_agent_passport_usage(&agent_passport_id)
                 .await
-                .with_context(|| format!("Failed to get usage for access key {access_key_id}"))?;
+                .with_context(|| {
+                    format!("Failed to get usage for agent passport {agent_passport_id}")
+                })?;
             runtime.print_data(&serde_json::json!({
-                "access_key": access_key,
+                "agent_passport": agent_passport,
                 "bindings": bindings,
                 "usage": usage,
             }))?;
         }
-        AccessKeyAction::Freeze { access_key_id } => {
-            let key_id = access_key_id;
+        AgentPassportAction::Freeze { agent_passport_id } => {
+            let key_id = agent_passport_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "access_key.freeze",
-                    "access_key_id": key_id,
+                    "action": "agent_passport.freeze",
+                    "agent_passport_id": key_id,
                 }))?;
                 return Ok(());
             }
-            let access_key = client
-                .freeze_access_key(&key_id)
+            let agent_passport = client
+                .freeze_agent_passport(&key_id)
                 .await
-                .with_context(|| format!("Failed to freeze access key {key_id}"))?;
-            runtime.print_data(&access_key)?;
+                .with_context(|| format!("Failed to freeze agent passport {key_id}"))?;
+            runtime.print_data(&agent_passport)?;
         }
-        AccessKeyAction::Revoke { access_key_id } => {
-            let key_id = access_key_id;
+        AgentPassportAction::Revoke { agent_passport_id } => {
+            let key_id = agent_passport_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "access_key.revoke",
-                    "access_key_id": key_id,
+                    "action": "agent_passport.revoke",
+                    "agent_passport_id": key_id,
                 }))?;
                 return Ok(());
             }
-            let access_key = client
-                .revoke_access_key(&key_id)
+            let agent_passport = client
+                .revoke_agent_passport(&key_id)
                 .await
-                .with_context(|| format!("Failed to revoke access key {key_id}"))?;
-            runtime.print_data(&access_key)?;
+                .with_context(|| format!("Failed to revoke agent passport {key_id}"))?;
+            runtime.print_data(&agent_passport)?;
         }
     }
     Ok(())

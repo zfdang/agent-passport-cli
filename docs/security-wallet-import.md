@@ -37,7 +37,7 @@ The Vault Signer generates an ephemeral X25519 public key for the import session
 - The `kitepass-cli` uses this public key to encrypt your wallet secret using **HPKE (RFC 9180)**.
 - Encryption occurs **locally** in your terminal's memory.
 - The CLI binds the encryption to both:
-  - **AAD**, which currently includes `owner_id`, `owner_session_id`, `request_id`, and `vault_signer_instance_id`
+  - **AAD**, which currently includes `principal_account_id`, `principal_session_id`, `request_id`, and `vault_signer_instance_id`
   - **HPKE info**, which currently includes `import_session_id`, `vault_signer_instance_id`, `endpoint_binding`, `authorization_model`, measurement profile data, and reviewed-build metadata
 
 ### 3. End-to-End Encryption
@@ -50,6 +50,6 @@ The encrypted blob (ciphertext) is sent to the Passport Gateway and then forward
 ## Why it is Secure
 
 1. **Zero-Knowledge Gateway Path**: Gateway and other control-plane services do not receive plaintext wallet material.
-2. **Session And Instance Binding**: The import envelope is bound to the specific import session, owner session, request, and Vault Signer instance.
+2. **Session And Instance Binding**: The import envelope is bound to the specific import session, principal session, request, and Vault Signer instance.
 3. **Reviewed-Build And Measurement Checks**: The CLI rejects discovery payloads whose PCRs, measurement profile, or reviewed-build metadata do not match the Gateway bootstrap expectations.
 4. **TEE-Only Plaintext Use**: Plaintext wallet material exists only on the owner-controlled CLI surface before encryption and inside Vault Signer TEE memory after decryption.

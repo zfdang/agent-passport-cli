@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::{CombinedToken, CryptoEnvelope};
+use kitepass_crypto::encryption::{AgentPassportToken, CryptoEnvelope};
 use kitepass_crypto::hpke::{generate_recipient_keypair, IMPORT_ENCRYPTION_SCHEME};
 use predicates::str::contains;
 use std::fs;
@@ -64,20 +64,24 @@ fn write_agents(tempdir: &TempDir, registry: &AgentRegistry) {
     }
 }
 
-fn encrypted_identity_from_key(name: &str, access_key_id: &str, key: &AgentKey) -> AgentIdentity {
+fn encrypted_identity_from_key(
+    name: &str,
+    agent_passport_id: &str,
+    key: &AgentKey,
+) -> AgentIdentity {
     let pem = key.export_pem().expect("key should export");
     AgentIdentity {
         name: name.to_string(),
-        access_key_id: access_key_id.to_string(),
+        agent_passport_id: agent_passport_id.to_string(),
         public_key_hex: key.public_key_hex(),
         encrypted_key: CryptoEnvelope::encrypt(pem.as_bytes(), TEST_COMBINED_SECRET)
             .expect("key should encrypt"),
     }
 }
 
-fn encrypted_identity(name: &str, access_key_id: &str) -> AgentIdentity {
+fn encrypted_identity(name: &str, agent_passport_id: &str) -> AgentIdentity {
     let key = AgentKey::generate();
-    encrypted_identity_from_key(name, access_key_id, &key)
+    encrypted_identity_from_key(name, agent_passport_id, &key)
 }
 
 fn cli_command(tempdir: &TempDir) -> Command {
@@ -101,19 +105,19 @@ fn wallet_list_requires_login_with_stable_exit_code() {
 }
 
 #[test]
-fn access_key_create_dry_run_emits_json_without_writing_keys() {
+fn agent_passport_create_dry_run_emits_json_without_writing_keys() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     write_config(
         &tempdir,
         Some("https://api.example.invalid"),
-        Some("owner-token"),
+        Some("principal-token"),
     );
 
     cli_command(&tempdir)
         .args([
             "--json",
             "--dry-run",
-            "access-key",
+            "agent-passport",
             "create",
             "--name",
             "worker-key",
@@ -121,7 +125,7 @@ fn access_key_create_dry_run_emits_json_without_writing_keys() {
         .assert()
         .success()
         .stdout(contains("\"dry_run\": true"))
-        .stdout(contains("\"action\": \"access_key.create\""))
+        .stdout(contains("\"action\": \"agent_passport.create\""))
         .stdout(contains("\"profile_name\": \"worker-key\""));
 
     assert!(
@@ -131,19 +135,19 @@ fn access_key_create_dry_run_emits_json_without_writing_keys() {
 }
 
 #[tokio::test]
-async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
+async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-access-keys:prepare"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports:prepare"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "intent_id": "intent_123",
             "intent_hash": "hash_123",
             "approval_url": "https://kitepass.xyz/approve/intent_123",
-            "approval_status": "pending_owner_step_up",
+            "approval_status": "pending_principal_step_up",
             "approval_expires_at": "2026-04-01T00:00:00Z"
         })))
         .mount(&mock_server)
@@ -151,56 +155,56 @@ async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
 
     Mock::given(method("POST"))
         .and(path("/v1/provisioning-intents/intent_123/approve"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "owner_approval_id": "oa_123",
-            "record_type": "owner_approval_record",
+            "principal_approval_id": "oa_123",
+            "record_type": "principal_approval_record",
             "record_version": 1,
-            "owner_id": "own_dev",
+            "principal_account_id": "pac_dev",
             "intent_id": "intent_123",
             "intent_hash": "hash_123",
-            "operation": "create_agent_access_key",
+            "operation": "create_agent_passport",
             "approval_method": "passkey",
             "approved_at": "2026-03-31T00:00:00Z",
             "expires_at": "2026-04-01T00:00:00Z",
             "approver_key_ref": "owner-root",
-            "owner_approval_signature": "0xapproval"
+            "principal_approval_signature": "0xapproval"
         })))
         .mount(&mock_server)
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-access-keys"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "status": "active",
-            "owner_approval_status": "consumed",
+            "principal_approval_status": "consumed",
             "bindings": []
         })))
         .mount(&mock_server)
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "access-key", "create", "--name", "worker-key"])
+        .args(["--json", "agent-passport", "create", "--name", "worker-key"])
         .assert()
         .success()
-        .stdout(contains("\"access_key_id\": \"aak_123\""))
-        .stdout(contains("\"combined_token\": \"kite_tk_aak_123__"))
+        .stdout(contains("\"agent_passport_id\": \"agp_123\""))
+        .stdout(contains("\"agent_passport_token\": \"kite_apt_agp_123__"))
         .stderr(contains(
-            "IMPORTANT: Save the Combined Token below immediately!",
+            "IMPORTANT: Save the Agent Passport Token below immediately!",
         ));
 
     assert!(
         !tempdir.path().join(".kitepass").join("keys").exists(),
-        "access-key create should no longer persist PEM key files"
+        "agent-passport create should no longer persist PEM key files"
     );
 
     let registry = load_saved_agents(&tempdir);
     assert_eq!(registry.active_profile.as_deref(), Some("worker-key"));
     assert_eq!(registry.agents.len(), 1);
     assert_eq!(registry.agents[0].name, "worker-key");
-    assert_eq!(registry.agents[0].access_key_id, "aak_123");
+    assert_eq!(registry.agents[0].agent_passport_id, "agp_123");
     assert_eq!(registry.agents[0].encrypted_key.cipher, "aes-256-gcm");
     assert_eq!(registry.agents[0].encrypted_key.kdf, "hkdf-sha256");
 }
@@ -209,16 +213,16 @@ async fn access_key_create_emits_clean_json_and_persists_encrypted_profile() {
 async fn wallet_list_renders_text_table_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
         .and(path("/v1/wallets"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallets": [
                 {
                     "wallet_id": "wal_123",
-                    "owner_id": "owner_123",
+                    "principal_account_id": "owner_123",
                     "chain_family": "evm",
                     "status": "active",
                     "key_blob_ref": "vault://wallets/wal_123",
@@ -244,16 +248,16 @@ async fn wallet_list_renders_text_table_output() {
 async fn wallet_list_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
         .and(path("/v1/wallets"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallets": [
                 {
                     "wallet_id": "wal_456",
-                    "owner_id": "owner_123",
+                    "principal_account_id": "owner_123",
                     "chain_family": "evm",
                     "status": "active",
                     "key_blob_ref": "vault://wallets/wal_456",
@@ -281,7 +285,7 @@ async fn login_json_flow_persists_access_token() {
     write_config(&tempdir, Some(&mock_server.uri()), None);
 
     Mock::given(method("POST"))
-        .and(path("/v1/owner-auth/device-code"))
+        .and(path("/v1/principal-auth/device-code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "device_code": "dev_123",
             "user_code": "USER-CODE",
@@ -293,7 +297,7 @@ async fn login_json_flow_persists_access_token() {
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/v1/owner-auth/poll/dev_123"))
+        .and(path("/v1/principal-auth/poll/dev_123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "token_mock_123",
             "error": null
@@ -335,16 +339,16 @@ async fn login_json_flow_persists_access_token() {
 async fn policy_activate_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/policies/pol_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/passport-policies/pol_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policy_id": "pol_123",
+            "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -359,10 +363,16 @@ async fn policy_activate_renders_json_output() {
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "policy", "activate", "--policy-id", "pol_123"])
+        .args([
+            "--json",
+            "passport-policy",
+            "activate",
+            "--passport-policy-id",
+            "pol_123",
+        ])
         .assert()
         .success()
-        .stdout(contains("\"policy_id\": \"pol_123\""))
+        .stdout(contains("\"passport_policy_id\": \"pol_123\""))
         .stdout(contains("\"state\": \"active\""));
 }
 
@@ -370,11 +380,11 @@ async fn policy_activate_renders_json_output() {
 async fn audit_verify_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
         .and(path("/v1/audit-events/verify"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "valid": true,
             "event_count": 3,
@@ -395,11 +405,11 @@ async fn audit_verify_renders_json_output() {
 async fn operations_get_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
         .and(path("/v1/operations/op_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "operation_id": "op_123",
             "operation_type": "transaction_submission",
@@ -433,10 +443,10 @@ async fn sign_validate_mode_renders_json_output() {
         &tempdir,
         &AgentRegistry {
             active_profile: Some("default".to_string()),
-            agents: vec![encrypted_identity_from_key("default", "aak_123", &key)],
+            agents: vec![encrypted_identity_from_key("default", "agp_123", &key)],
         },
     );
-    let combined_token = CombinedToken::format("aak_123", TEST_COMBINED_SECRET);
+    let agent_passport_token = AgentPassportToken::format("agp_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -444,8 +454,8 @@ async fn sign_validate_mode_renders_json_output() {
             "request_id": "req_123",
             "valid": true,
             "resolved_wallet_id": "wal_123",
-            "policy_id": "pol_123",
-            "policy_version": 1,
+            "passport_policy_id": "pol_123",
+            "passport_policy_version": 1,
             "normalized": {
                 "wallet_id": "wal_123",
                 "chain_id": "eip155:8453",
@@ -458,7 +468,7 @@ async fn sign_validate_mode_renders_json_output() {
         .await;
 
     cli_command(&tempdir)
-        .env("KITE_AGENT_TOKEN", &combined_token)
+        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
         .args([
             "--json",
             "sign",
@@ -492,7 +502,7 @@ async fn sign_validate_mode_renders_json_output() {
     let validate_body: serde_json::Value =
         serde_json::from_slice(&validate_req.body).expect("validate body should be json");
 
-    assert_eq!(validate_body["access_key_id"], "aak_123");
+    assert_eq!(validate_body["agent_passport_id"], "agp_123");
     assert!(validate_body["agent_proof"]["signature"]
         .as_str()
         .expect("validate proof should be a string")
@@ -500,7 +510,7 @@ async fn sign_validate_mode_renders_json_output() {
 }
 
 #[test]
-fn sign_requires_combined_token() {
+fn sign_requires_agent_passport_token() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
 
     cli_command(&tempdir)
@@ -513,19 +523,19 @@ fn sign_requires_combined_token() {
         ])
         .assert()
         .failure()
-        .stderr(contains("requires KITE_AGENT_TOKEN"));
+        .stderr(contains("requires KITE_AGENT_PASSPORT_TOKEN"));
 }
 
 #[tokio::test]
 async fn audit_list_renders_json_output_for_wallet_filter() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
         .and(path("/v1/audit-events"))
         .and(query_param("wallet_id", "wal_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "events": [{
                 "event_id": "evt_123",
@@ -533,12 +543,12 @@ async fn audit_list_renders_json_output_for_wallet_filter() {
                 "trace_id": "trace_123",
                 "request_id": "req_123",
                 "wallet_id": "wal_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "chain_id": "eip155:8453",
                 "payload_hash": "0xhash",
                 "outcome": "success",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "permit_id": "permit_123",
                 "enclave_receipt": null,
                 "previous_event_hash": "root",
@@ -557,17 +567,17 @@ async fn audit_list_renders_json_output_for_wallet_filter() {
 }
 
 #[tokio::test]
-async fn access_key_get_renders_json_output_with_bindings_and_usage() {
+async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys/aak_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports/agp_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_key_id": "aak_123",
-            "owner_id": "own_dev",
+            "agent_passport_id": "agp_123",
+            "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
             "key_address": "ed25519:feedface",
@@ -579,15 +589,15 @@ async fn access_key_get_renders_json_output_with_bindings_and_usage() {
         .mount(&mock_server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys/aak_123/bindings"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports/agp_123/bindings"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "bindings": [{
                 "binding_id": "bind_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "wallet_id": "wal_123",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "status": "active",
                 "is_default": true,
                 "selection_priority": 0
@@ -596,15 +606,15 @@ async fn access_key_get_renders_json_output_with_bindings_and_usage() {
         .mount(&mock_server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/agent-access-keys/aak_123/usage"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports/agp_123/usage"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "usage": {
                 "binding_id": "bind_123",
-                "policy_id": "pol_123",
-                "policy_version": 1,
+                "passport_policy_id": "pol_123",
+                "passport_policy_version": 1,
                 "wallet_id": "wal_123",
-                "access_key_id": "aak_123",
+                "agent_passport_id": "agp_123",
                 "lifetime_spent": "50",
                 "daily_window_started_at": "2026-03-31T00:00:00Z",
                 "daily_spent": "10",
@@ -618,26 +628,32 @@ async fn access_key_get_renders_json_output_with_bindings_and_usage() {
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "access-key", "get", "--access-key-id", "aak_123"])
+        .args([
+            "--json",
+            "agent-passport",
+            "get",
+            "--agent-passport-id",
+            "agp_123",
+        ])
         .assert()
         .success()
-        .stdout(contains("\"access_key_id\": \"aak_123\""))
+        .stdout(contains("\"agent_passport_id\": \"agp_123\""))
         .stdout(contains("\"binding_id\": \"bind_123\""))
         .stdout(contains("\"daily_spent\": \"10\""));
 }
 
 #[tokio::test]
-async fn access_key_freeze_and_revoke_render_json_output() {
+async fn agent_passport_freeze_and_revoke_render_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-access-keys/aak_freeze_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports/agp_freeze_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_key_id": "aak_freeze_123",
-            "owner_id": "own_dev",
+            "agent_passport_id": "agp_freeze_123",
+            "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
             "key_address": "ed25519:feedface",
@@ -649,11 +665,11 @@ async fn access_key_freeze_and_revoke_render_json_output() {
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
-        .and(path("/v1/agent-access-keys/aak_revoke_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/agent-passports/agp_revoke_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_key_id": "aak_revoke_123",
-            "owner_id": "own_dev",
+            "agent_passport_id": "agp_revoke_123",
+            "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
             "key_address": "ed25519:feedface",
@@ -668,27 +684,27 @@ async fn access_key_freeze_and_revoke_render_json_output() {
     cli_command(&tempdir)
         .args([
             "--json",
-            "access-key",
+            "agent-passport",
             "freeze",
-            "--access-key-id",
-            "aak_freeze_123",
+            "--agent-passport-id",
+            "agp_freeze_123",
         ])
         .assert()
         .success()
-        .stdout(contains("\"access_key_id\": \"aak_freeze_123\""))
+        .stdout(contains("\"agent_passport_id\": \"agp_freeze_123\""))
         .stdout(contains("\"status\": \"frozen\""));
 
     cli_command(&tempdir)
         .args([
             "--json",
-            "access-key",
+            "agent-passport",
             "revoke",
-            "--access-key-id",
-            "aak_revoke_123",
+            "--agent-passport-id",
+            "agp_revoke_123",
         ])
         .assert()
         .success()
-        .stdout(contains("\"access_key_id\": \"aak_revoke_123\""))
+        .stdout(contains("\"agent_passport_id\": \"agp_revoke_123\""))
         .stdout(contains("\"status\": \"revoked\""));
 }
 
@@ -696,16 +712,16 @@ async fn access_key_freeze_and_revoke_render_json_output() {
 async fn policy_create_renders_json_output_and_posts_expected_body() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/policies"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/passport-policies"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policy_id": "pol_create_123",
+            "passport_policy_id": "pol_create_123",
             "binding_id": "",
             "wallet_id": "wal_123",
-            "access_key_id": "",
+            "agent_passport_id": "",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -722,7 +738,7 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
     cli_command(&tempdir)
         .args([
             "--json",
-            "policy",
+            "passport-policy",
             "create",
             "--wallet-id",
             "wal_123",
@@ -741,7 +757,7 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"policy_id\": \"pol_create_123\""))
+        .stdout(contains("\"passport_policy_id\": \"pol_create_123\""))
         .stdout(contains("\"state\": \"draft\""));
 
     let requests = mock_server
@@ -751,7 +767,7 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
     assert_eq!(body["wallet_id"], "wal_123");
-    assert!(body.get("access_key_id").is_none() || body["access_key_id"].is_null());
+    assert!(body.get("agent_passport_id").is_none() || body["agent_passport_id"].is_null());
     assert_eq!(body["allowed_chains"][0], "eip155:8453");
     assert_eq!(body["allowed_actions"][0], "transaction");
     assert_eq!(body["allowed_destinations"][0], "0xabc");
@@ -761,16 +777,16 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
 async fn policy_create_uses_policy_first_payload() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/policies"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/passport-policies"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policy_id": "pol_create_456",
+            "passport_policy_id": "pol_create_456",
             "binding_id": "",
             "wallet_id": "wal_123",
-            "access_key_id": "",
+            "agent_passport_id": "",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -787,7 +803,7 @@ async fn policy_create_uses_policy_first_payload() {
     cli_command(&tempdir)
         .args([
             "--json",
-            "policy",
+            "passport-policy",
             "create",
             "--wallet-id",
             "wal_123",
@@ -806,7 +822,7 @@ async fn policy_create_uses_policy_first_payload() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"policy_id\": \"pol_create_456\""));
+        .stdout(contains("\"passport_policy_id\": \"pol_create_456\""));
 
     let requests = mock_server
         .received_requests()
@@ -815,23 +831,23 @@ async fn policy_create_uses_policy_first_payload() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
     assert_eq!(body["wallet_id"], "wal_123");
-    assert!(body.get("access_key_id").is_none());
+    assert!(body.get("agent_passport_id").is_none());
 }
 
 #[tokio::test]
 async fn policy_get_and_deactivate_render_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
-        .and(path("/v1/policies/pol_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/passport-policies/pol_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policy_id": "pol_123",
+            "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -845,13 +861,13 @@ async fn policy_get_and_deactivate_render_json_output() {
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
-        .and(path("/v1/policies/pol_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(path("/v1/passport-policies/pol_123"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policy_id": "pol_123",
+            "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -866,17 +882,29 @@ async fn policy_get_and_deactivate_render_json_output() {
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "policy", "get", "--policy-id", "pol_123"])
+        .args([
+            "--json",
+            "passport-policy",
+            "get",
+            "--passport-policy-id",
+            "pol_123",
+        ])
         .assert()
         .success()
-        .stdout(contains("\"policy_id\": \"pol_123\""))
+        .stdout(contains("\"passport_policy_id\": \"pol_123\""))
         .stdout(contains("\"state\": \"active\""));
 
     cli_command(&tempdir)
-        .args(["--json", "policy", "deactivate", "--policy-id", "pol_123"])
+        .args([
+            "--json",
+            "passport-policy",
+            "deactivate",
+            "--passport-policy-id",
+            "pol_123",
+        ])
         .assert()
         .success()
-        .stdout(contains("\"policy_id\": \"pol_123\""))
+        .stdout(contains("\"passport_policy_id\": \"pol_123\""))
         .stdout(contains("\"state\": \"deactivated\""));
 }
 
@@ -884,23 +912,23 @@ async fn policy_get_and_deactivate_render_json_output() {
 async fn audit_get_renders_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
         .and(path("/v1/audit-events/evt_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "event_id": "evt_123",
             "action": "authorization_succeeded",
             "trace_id": "trace_123",
             "request_id": "req_123",
             "wallet_id": "wal_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "chain_id": "eip155:8453",
             "payload_hash": "0xhash",
             "outcome": "success",
-            "policy_id": "pol_123",
-            "policy_version": 1,
+            "passport_policy_id": "pol_123",
+            "passport_policy_version": 1,
             "permit_id": "permit_123",
             "enclave_receipt": null,
             "previous_event_hash": "root",
@@ -921,11 +949,11 @@ async fn audit_get_renders_json_output() {
 async fn wallet_get_freeze_and_revoke_render_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     let wallet_body = serde_json::json!({
         "wallet_id": "wal_123",
-        "owner_id": "owner_123",
+        "principal_account_id": "owner_123",
         "chain_family": "evm",
         "status": "active",
         "key_blob_ref": "vault://wallets/wal_123",
@@ -936,16 +964,16 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
 
     Mock::given(method("GET"))
         .and(path("/v1/wallets/wal_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(wallet_body.clone()))
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/wallets/wal_freeze_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallet_id": "wal_freeze_123",
-            "owner_id": "owner_123",
+            "principal_account_id": "owner_123",
             "chain_family": "evm",
             "status": "frozen",
             "key_blob_ref": "vault://wallets/wal_freeze_123",
@@ -957,10 +985,10 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/wallets/wal_revoke_123"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "wallet_id": "wal_revoke_123",
-            "owner_id": "owner_123",
+            "principal_account_id": "owner_123",
             "chain_family": "evm",
             "status": "revoked",
             "key_blob_ref": "vault://wallets/wal_revoke_123",
@@ -1009,13 +1037,13 @@ async fn wallet_get_freeze_and_revoke_render_json_output() {
 async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
-    write_config(&tempdir, Some(&mock_server.uri()), Some("owner-token"));
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     let vault_keypair = generate_recipient_keypair();
 
     Mock::given(method("POST"))
         .and(path("/v1/wallets/import-sessions"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_999",
             "status": "awaiting_upload",
@@ -1043,8 +1071,8 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
                 "authorization_model": "dual_sign_authorization_tee_signer"
             },
             "channel_binding": {
-                "owner_id": "own_dev",
-                "owner_session_id": "oas_dev",
+                "principal_account_id": "pac_dev",
+                "principal_session_id": "pss_dev",
                 "request_id": "req_dev"
             },
             "expires_at": "2026-03-31T00:10:00Z"
@@ -1084,7 +1112,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/wallets/import-sessions/sess_999/upload"))
-        .and(header("authorization", "Bearer owner-token"))
+        .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "operation_id": "op_123",
             "session_id": "sess_999",
@@ -1132,8 +1160,8 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
     assert_eq!(session_body["chain_family"], "evm");
     assert_eq!(session_body["label"], "test-wallet");
     assert_eq!(upload_body["vault_signer_instance_id"], "vs_dev_1");
-    assert_eq!(upload_body["aad"]["owner_id"], "own_dev");
-    assert_eq!(upload_body["aad"]["owner_session_id"], "oas_dev");
+    assert_eq!(upload_body["aad"]["principal_account_id"], "pac_dev");
+    assert_eq!(upload_body["aad"]["principal_session_id"], "pss_dev");
     assert_eq!(upload_body["aad"]["request_id"], "req_dev");
     assert_eq!(upload_body["aad"]["vault_signer_instance_id"], "vs_dev_1");
     assert!(
@@ -1163,10 +1191,10 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         &tempdir,
         &AgentRegistry {
             active_profile: Some("default".to_string()),
-            agents: vec![encrypted_identity_from_key("default", "aak_123", &key)],
+            agents: vec![encrypted_identity_from_key("default", "agp_123", &key)],
         },
     );
-    let combined_token = CombinedToken::format("aak_123", TEST_COMBINED_SECRET);
+    let agent_passport_token = AgentPassportToken::format("agp_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1174,8 +1202,8 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
             "request_id": "req_mock_123",
             "valid": true,
             "resolved_wallet_id": "wal_123",
-            "policy_id": "pol_123",
-            "policy_version": 1,
+            "passport_policy_id": "pol_123",
+            "passport_policy_version": 1,
             "normalized": {
                 "wallet_id": "wal_123",
                 "chain_id": "eip155:8453",
@@ -1190,7 +1218,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "challenge_nonce": "nonce_challenge_123",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -1200,7 +1228,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
-            "access_key_id": "aak_123",
+            "agent_passport_id": "agp_123",
             "session_nonce": "nonce_123",
             "status": "active",
             "expires_at": "2026-03-31T00:05:00Z"
@@ -1221,12 +1249,12 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .await;
 
     cli_command(&tempdir)
-        .env("KITE_AGENT_TOKEN", &combined_token)
+        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
         .args([
             "--json",
             "sign",
-            "--access-key-id",
-            "aak_123",
+            "--agent-passport-id",
+            "agp_123",
             "--wallet-id",
             "wal_123",
             "--chain-id",
@@ -1277,12 +1305,12 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
     assert_eq!(validate_body["wallet_id"], "wal_123");
-    assert_eq!(challenge_body["access_key_id"], "aak_123");
+    assert_eq!(challenge_body["agent_passport_id"], "agp_123");
     assert!(validate_body["agent_proof"]["signature"]
         .as_str()
         .expect("validate proof should be a string")
         .starts_with("0x"));
-    assert_eq!(session_body["access_key_id"], "aak_123");
+    assert_eq!(session_body["agent_passport_id"], "agp_123");
     assert!(session_body["request_id"].is_string());
     assert_eq!(session_body["challenge_id"], "sch_123");
     assert!(session_body["proof_signature"]
@@ -1291,7 +1319,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .starts_with("0x"));
     assert_eq!(sign_body["wallet_id"], "wal_123");
     assert_eq!(sign_body["mode"], "sign_and_submit");
-    assert_eq!(sign_body["agent_proof"]["access_key_id"], "aak_123");
+    assert_eq!(sign_body["agent_proof"]["agent_passport_id"], "agp_123");
     assert_eq!(sign_body["agent_proof"]["session_nonce"], "nonce_123");
     assert!(sign_body["agent_proof"]["signature"]
         .as_str()
@@ -1308,8 +1336,8 @@ fn profile_list_use_and_delete_manage_local_registry() {
         &AgentRegistry {
             active_profile: Some("default".to_string()),
             agents: vec![
-                encrypted_identity("default", "aak_default"),
-                encrypted_identity("trading_bot", "aak_bot"),
+                encrypted_identity("default", "agp_default"),
+                encrypted_identity("trading_bot", "agp_bot"),
             ],
         },
     );
@@ -1358,12 +1386,12 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
         &AgentRegistry {
             active_profile: Some("default".to_string()),
             agents: vec![
-                encrypted_identity_from_key("default", "aak_default", &default_key),
-                encrypted_identity_from_key("trading_bot", "aak_bot", &bot_key),
+                encrypted_identity_from_key("default", "agp_default", &default_key),
+                encrypted_identity_from_key("trading_bot", "agp_bot", &bot_key),
             ],
         },
     );
-    let combined_token = CombinedToken::format("aak_bot", TEST_COMBINED_SECRET);
+    let agent_passport_token = AgentPassportToken::format("agp_bot", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1371,8 +1399,8 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
             "request_id": "req_mock_profile",
             "valid": true,
             "resolved_wallet_id": "wal_profile",
-            "policy_id": "pol_profile",
-            "policy_version": 1,
+            "passport_policy_id": "pol_profile",
+            "passport_policy_version": 1,
             "normalized": {
                 "wallet_id": "wal_profile",
                 "chain_id": "eip155:8453",
@@ -1387,7 +1415,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_profile",
-            "access_key_id": "aak_bot",
+            "agent_passport_id": "agp_bot",
             "challenge_nonce": "nonce_profile_challenge",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -1397,7 +1425,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_profile",
-            "access_key_id": "aak_bot",
+            "agent_passport_id": "agp_bot",
             "session_nonce": "nonce_profile",
             "status": "active",
             "expires_at": "2026-03-31T00:05:00Z"
@@ -1419,7 +1447,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
 
     cli_command(&tempdir)
         .env("KITE_PROFILE", "default")
-        .env("KITE_AGENT_TOKEN", &combined_token)
+        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
         .args([
             "--json",
             "sign",
@@ -1466,8 +1494,8 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
     let sign_body: serde_json::Value =
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
-    assert_eq!(challenge_body["access_key_id"], "aak_bot");
-    assert_eq!(session_body["access_key_id"], "aak_bot");
+    assert_eq!(challenge_body["agent_passport_id"], "agp_bot");
+    assert_eq!(session_body["agent_passport_id"], "agp_bot");
     assert_eq!(session_body["challenge_id"], "sch_profile");
-    assert_eq!(sign_body["access_key_id"], "aak_bot");
+    assert_eq!(sign_body["agent_passport_id"], "agp_bot");
 }

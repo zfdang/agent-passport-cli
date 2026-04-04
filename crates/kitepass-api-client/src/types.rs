@@ -80,8 +80,8 @@ pub struct ImportSessionResponse {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ChannelBinding {
-    pub owner_id: String,
-    pub owner_session_id: String,
+    pub principal_account_id: String,
+    pub principal_session_id: String,
     pub request_id: String,
 }
 
@@ -136,8 +136,8 @@ pub struct UploadWalletCiphertextRequest {
 
 #[derive(Serialize, Debug)]
 pub struct ImportAad {
-    pub owner_id: String,
-    pub owner_session_id: String,
+    pub principal_account_id: String,
+    pub principal_session_id: String,
     pub request_id: String,
     pub vault_signer_instance_id: String,
 }
@@ -151,7 +151,7 @@ pub struct UploadWalletCiphertextResponse {
 }
 
 #[derive(Serialize, Debug)]
-pub struct RegisterAccessKeyRequest {
+pub struct RegisterAgentPassportRequest {
     pub public_key: String,
     pub key_address: String,
     pub expires_at: String,
@@ -160,7 +160,7 @@ pub struct RegisterAccessKeyRequest {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PrepareAccessKeyResponse {
+pub struct PrepareAgentPassportResponse {
     pub intent_id: String,
     pub intent_hash: String,
     pub approval_url: String,
@@ -173,23 +173,23 @@ pub struct ProvisioningIntentStatusResponse {
     pub intent_id: String,
     pub intent_hash: String,
     pub approval_status: String,
-    pub owner_approval_id: Option<String>,
-    pub owner_approval_expires_at: Option<DateTime<Utc>>,
+    pub principal_approval_id: Option<String>,
+    pub principal_approval_expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct FinalizeAccessKeyRequest {
+pub struct FinalizeAgentPassportRequest {
     pub intent_id: String,
-    pub owner_approval_id: String,
+    pub principal_approval_id: String,
     pub idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct OwnerApprovalRecord {
-    pub owner_approval_id: String,
+pub struct PrincipalApprovalRecord {
+    pub principal_approval_id: String,
     pub record_type: String,
     pub record_version: u32,
-    pub owner_id: String,
+    pub principal_account_id: String,
     pub intent_id: String,
     pub intent_hash: String,
     pub operation: String,
@@ -197,14 +197,14 @@ pub struct OwnerApprovalRecord {
     pub approved_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub approver_key_ref: String,
-    pub owner_approval_signature: String,
+    pub principal_approval_signature: String,
 }
 
 #[derive(Serialize, Debug)]
 pub struct BindingInput {
     pub wallet_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub is_default: bool,
     pub selection_priority: u32,
 }
@@ -218,16 +218,16 @@ pub(crate) enum WalletMutationRequest {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "operation", rename_all = "snake_case")]
-pub(crate) enum AccessKeyMutationRequest {
+pub(crate) enum AgentPassportMutationRequest {
     Freeze,
     Revoke,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct RegisterAccessKeyResponse {
-    pub access_key_id: String,
+pub struct RegisterAgentPassportResponse {
+    pub agent_passport_id: String,
     pub status: String,
-    pub owner_approval_status: Option<String>,
+    pub principal_approval_status: Option<String>,
     pub bindings: Vec<BindingResult>,
 }
 
@@ -235,17 +235,17 @@ pub struct RegisterAccessKeyResponse {
 pub struct BindingResult {
     pub binding_id: String,
     pub wallet_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub tee_mirror_status: String,
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct CreatePolicyRequest {
+pub struct CreatePassportPolicyRequest {
     pub binding_id: Option<String>,
     pub wallet_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub access_key_id: Option<String>,
+    pub agent_passport_id: Option<String>,
     pub allowed_chains: Vec<String>,
     pub allowed_actions: Vec<String>,
     pub max_single_amount: String,
@@ -265,7 +265,7 @@ pub enum SigningMode {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct AgentProof {
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub session_nonce: String,
     pub signature: String,
 }
@@ -276,7 +276,7 @@ pub struct SignRequest {
     pub request_id: String,
     pub idempotency_key: String,
     pub wallet_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub chain_id: String,
     pub signing_type: String,
     pub mode: SigningMode,
@@ -305,7 +305,7 @@ pub struct ValidateSignIntentRequest {
     pub request_id: String,
     pub wallet_id: Option<String>,
     pub wallet_selector: Option<String>,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub chain_id: String,
     pub signing_type: String,
     pub payload: String,
@@ -337,14 +337,14 @@ pub struct ValidateSignIntentResponse {
     pub request_id: String,
     pub valid: bool,
     pub resolved_wallet_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub normalized: NormalizedIntent,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateSessionRequest {
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,13 +355,13 @@ pub struct CreateSessionRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateSessionChallengeRequest {
-    pub access_key_id: String,
+    pub agent_passport_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateSessionChallengeResponse {
     pub challenge_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub challenge_nonce: String,
     pub expires_at: DateTime<Utc>,
 }
@@ -369,7 +369,7 @@ pub struct CreateSessionChallengeResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentSession {
     pub session_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub session_nonce: String,
     pub status: String,
     pub expires_at: DateTime<Utc>,
@@ -378,7 +378,7 @@ pub struct AgentSession {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Wallet {
     pub wallet_id: String,
-    pub owner_id: String,
+    pub principal_account_id: String,
     pub chain_family: ChainFamily,
     pub status: String,
     pub key_blob_ref: String,
@@ -388,9 +388,9 @@ pub struct Wallet {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct AgentAccessKey {
-    pub access_key_id: String,
-    pub owner_id: String,
+pub struct AgentPassport {
+    pub agent_passport_id: String,
+    pub principal_account_id: String,
     pub public_key: String,
     pub key_alg: String,
     pub key_address: String,
@@ -401,24 +401,24 @@ pub struct AgentAccessKey {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct WalletAccessBinding {
+pub struct WalletAgentPassportBinding {
     pub binding_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub wallet_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub status: String,
     pub is_default: bool,
     pub selection_priority: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PolicyUsageState {
+pub struct PassportPolicyUsageState {
     pub binding_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub wallet_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub lifetime_spent: String,
     pub daily_window_started_at: DateTime<Utc>,
     pub daily_spent: String,
@@ -429,12 +429,12 @@ pub struct PolicyUsageState {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Policy {
-    pub policy_id: String,
+pub struct PassportPolicy {
+    pub passport_policy_id: String,
     pub binding_id: String,
     pub wallet_id: String,
     #[serde(default)]
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub allowed_chains: Vec<String>,
     pub allowed_actions: Vec<String>,
     pub max_single_amount: String,
@@ -453,12 +453,12 @@ pub struct AuditEvent {
     pub trace_id: String,
     pub request_id: String,
     pub wallet_id: String,
-    pub access_key_id: String,
+    pub agent_passport_id: String,
     pub chain_id: String,
     pub payload_hash: String,
     pub outcome: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub passport_policy_id: String,
+    pub passport_policy_version: u64,
     pub permit_id: String,
     pub enclave_receipt: Option<String>,
     pub previous_event_hash: String,
@@ -492,26 +492,240 @@ pub(crate) struct WalletListResponse {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct AccessKeyListResponse {
-    pub access_keys: Vec<AgentAccessKey>,
+pub(crate) struct AgentPassportListResponse {
+    pub agent_passports: Vec<AgentPassport>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct BindingListResponse {
-    pub bindings: Vec<WalletAccessBinding>,
+    pub bindings: Vec<WalletAgentPassportBinding>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct UsageResponse {
-    pub usage: Option<PolicyUsageState>,
+    pub usage: Option<PassportPolicyUsageState>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct PolicyListResponse {
-    pub policies: Vec<Policy>,
+    pub passport_policies: Vec<PassportPolicy>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct AuditEventListResponse {
     pub events: Vec<AuditEvent>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    // ── ChainFamily::parse ──────────────────────────────────────────
+
+    #[test]
+    fn parse_evm_variants() {
+        assert_eq!(ChainFamily::parse("evm"), Some(ChainFamily::Evm));
+        assert_eq!(ChainFamily::parse("eip155"), Some(ChainFamily::Evm));
+        assert_eq!(ChainFamily::parse("base"), Some(ChainFamily::Evm));
+    }
+
+    #[test]
+    fn parse_is_case_insensitive() {
+        assert_eq!(ChainFamily::parse("EVM"), Some(ChainFamily::Evm));
+        assert_eq!(ChainFamily::parse("Eip155"), Some(ChainFamily::Evm));
+        assert_eq!(ChainFamily::parse("BASE"), Some(ChainFamily::Evm));
+    }
+
+    #[test]
+    fn parse_trims_whitespace() {
+        assert_eq!(ChainFamily::parse("  evm  "), Some(ChainFamily::Evm));
+    }
+
+    #[test]
+    fn parse_invalid_returns_none() {
+        assert_eq!(ChainFamily::parse("solana"), None);
+        assert_eq!(ChainFamily::parse("bitcoin"), None);
+        assert_eq!(ChainFamily::parse(""), None);
+        assert_eq!(ChainFamily::parse("ev"), None);
+    }
+
+    // ── ChainFamily::Display ────────────────────────────────────────
+
+    #[test]
+    fn display_evm() {
+        assert_eq!(format!("{}", ChainFamily::Evm), "evm");
+    }
+
+    // ── ChainFamily serde round-trip ────────────────────────────────
+
+    #[test]
+    fn chain_family_serde_roundtrip() {
+        let original = ChainFamily::Evm;
+        let json = serde_json::to_string(&original).unwrap();
+        assert_eq!(json, "\"evm\"");
+        let decoded: ChainFamily = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    // ── AgentPassport serde round-trip ──────────────────────────────
+
+    #[test]
+    fn agent_passport_serde_roundtrip() {
+        let json_str = r#"{
+            "agent_passport_id": "agp_001",
+            "principal_account_id": "pa_001",
+            "public_key": "0xpubkey",
+            "key_alg": "secp256k1",
+            "key_address": "0xaddr",
+            "status": "active",
+            "expires_at": "2026-12-31T23:59:59Z",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-06-15T12:00:00Z"
+        }"#;
+
+        let passport: AgentPassport = serde_json::from_str(json_str).unwrap();
+        assert_eq!(passport.agent_passport_id, "agp_001");
+        assert_eq!(passport.key_alg, "secp256k1");
+        assert_eq!(passport.status, "active");
+
+        // round-trip
+        let serialized = serde_json::to_string(&passport).unwrap();
+        let deserialized: AgentPassport = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.agent_passport_id, passport.agent_passport_id);
+        assert_eq!(deserialized.public_key, passport.public_key);
+    }
+
+    // ── PassportPolicy serde round-trip ─────────────────────────────
+
+    #[test]
+    fn passport_policy_serde_roundtrip() {
+        let json_str = r#"{
+            "passport_policy_id": "pp_001",
+            "binding_id": "bind_001",
+            "wallet_id": "wal_001",
+            "agent_passport_id": "agp_001",
+            "allowed_chains": ["eip155:8453"],
+            "allowed_actions": ["sign_transaction"],
+            "max_single_amount": "1000",
+            "max_daily_amount": "5000",
+            "allowed_destinations": ["0xdead"],
+            "valid_from": "2026-01-01T00:00:00Z",
+            "valid_until": "2026-12-31T23:59:59Z",
+            "state": "active",
+            "version": 1
+        }"#;
+
+        let policy: PassportPolicy = serde_json::from_str(json_str).unwrap();
+        assert_eq!(policy.passport_policy_id, "pp_001");
+        assert_eq!(policy.allowed_chains, vec!["eip155:8453"]);
+        assert_eq!(policy.version, 1);
+
+        let serialized = serde_json::to_string(&policy).unwrap();
+        let deserialized: PassportPolicy = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.passport_policy_id, policy.passport_policy_id);
+        assert_eq!(deserialized.max_single_amount, policy.max_single_amount);
+    }
+
+    #[test]
+    fn passport_policy_defaults_agent_passport_id() {
+        // agent_passport_id has #[serde(default)], so omitting it should work
+        let json_str = r#"{
+            "passport_policy_id": "pp_002",
+            "binding_id": "bind_002",
+            "wallet_id": "wal_002",
+            "allowed_chains": [],
+            "allowed_actions": [],
+            "max_single_amount": "0",
+            "max_daily_amount": "0",
+            "allowed_destinations": [],
+            "valid_from": "2026-01-01T00:00:00Z",
+            "valid_until": "2026-12-31T23:59:59Z",
+            "state": "draft",
+            "version": 0
+        }"#;
+
+        let policy: PassportPolicy = serde_json::from_str(json_str).unwrap();
+        assert_eq!(policy.agent_passport_id, "");
+    }
+
+    // ── SignRequest serde round-trip ────────────────────────────────
+
+    #[test]
+    fn sign_request_serde_roundtrip() {
+        let req = SignRequest {
+            request_id: "req_001".into(),
+            idempotency_key: "idem_001".into(),
+            wallet_id: "wal_001".into(),
+            agent_passport_id: "agp_001".into(),
+            chain_id: "eip155:8453".into(),
+            signing_type: "transaction".into(),
+            mode: SigningMode::SignAndSubmit,
+            payload: "0xdeadbeef".into(),
+            destination: "0xrecipient".into(),
+            value: "1000000".into(),
+            agent_proof: AgentProof {
+                agent_passport_id: "agp_001".into(),
+                session_nonce: "nonce_abc".into(),
+                signature: "0xsig".into(),
+            },
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: SignRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.request_id, "req_001");
+        assert_eq!(decoded.wallet_id, "wal_001");
+        assert_eq!(decoded.agent_proof.session_nonce, "nonce_abc");
+
+        // Verify SigningMode serializes as snake_case
+        assert!(json.contains("sign_and_submit"));
+    }
+
+    // ── SignResponse serde round-trip ───────────────────────────────
+
+    #[test]
+    fn sign_response_serde_roundtrip() {
+        let json_str = r#"{
+            "request_id": "req_001",
+            "status": "completed",
+            "permit_id": "permit_001",
+            "signature": "0xsig123",
+            "enclave_receipt": null,
+            "operation_id": null,
+            "poll_after_ms": null,
+            "reservation_id": null
+        }"#;
+
+        let resp: SignResponse = serde_json::from_str(json_str).unwrap();
+        assert_eq!(resp.request_id, "req_001");
+        assert_eq!(resp.status, "completed");
+        assert_eq!(resp.permit_id.as_deref(), Some("permit_001"));
+        assert_eq!(resp.signature.as_deref(), Some("0xsig123"));
+        assert!(resp.enclave_receipt.is_none());
+
+        let serialized = serde_json::to_string(&resp).unwrap();
+        let decoded: SignResponse = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(decoded.request_id, resp.request_id);
+        assert_eq!(decoded.permit_id, resp.permit_id);
+    }
+
+    #[test]
+    fn sign_response_all_optional_fields_present() {
+        let json_str = r#"{
+            "request_id": "req_002",
+            "status": "pending",
+            "permit_id": "permit_002",
+            "signature": "0xsig456",
+            "enclave_receipt": "receipt_data",
+            "operation_id": "op_001",
+            "poll_after_ms": 2000,
+            "reservation_id": "res_001"
+        }"#;
+
+        let resp: SignResponse = serde_json::from_str(json_str).unwrap();
+        assert_eq!(resp.operation_id.as_deref(), Some("op_001"));
+        assert_eq!(resp.poll_after_ms, Some(2000));
+        assert_eq!(resp.reservation_id.as_deref(), Some("res_001"));
+        assert_eq!(resp.enclave_receipt.as_deref(), Some("receipt_data"));
+    }
 }

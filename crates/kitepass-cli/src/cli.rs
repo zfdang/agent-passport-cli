@@ -47,16 +47,16 @@ pub enum Command {
         action: WalletAction,
     },
 
-    /// Agent Access Key management
-    AccessKey {
+    /// Agent Passport management
+    AgentPassport {
         #[command(subcommand)]
-        action: AccessKeyAction,
+        action: AgentPassportAction,
     },
 
-    /// Policy management
-    Policy {
+    /// Passport Policy management
+    PassportPolicy {
         #[command(subcommand)]
-        action: PolicyAction,
+        action: PassportPolicyAction,
     },
 
     /// Local agent profile management
@@ -75,9 +75,9 @@ pub enum Command {
         #[arg(long, default_value_t = false, conflicts_with = "validate")]
         broadcast: bool,
 
-        /// Explicit Passport access key id; must match KITE_AGENT_TOKEN when provided
+        /// Explicit Agent Passport id; must match `KITE_AGENT_PASSPORT_TOKEN` when provided
         #[arg(long)]
-        access_key_id: Option<String>,
+        agent_passport_id: Option<String>,
         /// Explicit wallet id; omit to allow auto routing by chain
         #[arg(long)]
         wallet_id: Option<String>,
@@ -142,41 +142,41 @@ pub enum WalletAction {
 }
 
 #[derive(Subcommand)]
-pub enum AccessKeyAction {
-    /// List access keys
+pub enum AgentPassportAction {
+    /// List agent passports
     List,
-    /// Create or replace a local agent profile backed by a new access key
+    /// Create or replace a local agent profile backed by a new agent passport
     Create {
         /// Local profile name. Defaults to the selected profile or `default`.
         #[arg(long)]
         name: Option<String>,
-        /// Bind the new runtime key to this wallet; requires --policy-id
-        #[arg(long, requires = "policy_id")]
+        /// Bind the new runtime key to this wallet; requires --passport-policy-id
+        #[arg(long, requires = "passport_policy_id")]
         wallet_id: Option<String>,
         /// Bind the new runtime key to this policy; requires --wallet-id
         #[arg(long, requires = "wallet_id")]
-        policy_id: Option<String>,
+        passport_policy_id: Option<String>,
         /// Keep the current active profile unchanged after creation
         #[arg(long, default_value_t = false)]
         no_activate: bool,
     },
-    /// Get access key details
+    /// Get agent passport details
     Get {
-        /// Passport access key id, for example aak_...
+        /// Agent Passport id, for example `agp_...`
         #[arg(long)]
-        access_key_id: String,
+        agent_passport_id: String,
     },
-    /// Freeze an access key
+    /// Freeze an agent passport
     Freeze {
-        /// Passport access key id, for example aak_...
+        /// Agent Passport id, for example `agp_...`
         #[arg(long)]
-        access_key_id: String,
+        agent_passport_id: String,
     },
-    /// Revoke an access key
+    /// Revoke an agent passport
     Revoke {
-        /// Passport access key id, for example aak_...
+        /// Agent Passport id, for example `agp_...`
         #[arg(long)]
-        access_key_id: String,
+        agent_passport_id: String,
     },
 }
 
@@ -197,12 +197,12 @@ pub enum ProfileAction {
 }
 
 #[derive(Subcommand)]
-pub enum PolicyAction {
-    /// List policies
+pub enum PassportPolicyAction {
+    /// List passport_policies
     List,
-    /// Create a new policy
+    /// Create a new passport policy
     Create {
-        /// Wallet id the policy applies to
+        /// Wallet id the passport policy applies to
         #[arg(long)]
         wallet_id: String,
         #[arg(long = "allowed-chain", num_args = 1..)]
@@ -218,20 +218,20 @@ pub enum PolicyAction {
         #[arg(long, default_value_t = 24)]
         valid_for_hours: i64,
     },
-    /// Get policy details
+    /// Get passport policy details
     Get {
         #[arg(long)]
-        policy_id: String,
+        passport_policy_id: String,
     },
-    /// Activate a policy
+    /// Activate a passport policy
     Activate {
         #[arg(long)]
-        policy_id: String,
+        passport_policy_id: String,
     },
-    /// Deactivate a policy
+    /// Deactivate a passport policy
     Deactivate {
         #[arg(long)]
-        policy_id: String,
+        passport_policy_id: String,
     },
 }
 
@@ -369,32 +369,32 @@ mod tests {
     }
 
     #[test]
-    fn rejects_access_key_create_with_wallet_without_policy() {
+    fn rejects_agent_passport_create_with_wallet_without_policy() {
         let err = match Cli::try_parse_from([
             "kitepass",
-            "access-key",
+            "agent-passport",
             "create",
             "--wallet-id",
             "wal_123",
         ]) {
-            Ok(_) => panic!("wallet-only access-key create should fail"),
+            Ok(_) => panic!("wallet-only agent-passport create should fail"),
             Err(err) => err,
         };
 
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
-        assert!(err.to_string().contains("--policy-id"));
+        assert!(err.to_string().contains("--passport-policy-id"));
     }
 
     #[test]
-    fn rejects_access_key_create_with_policy_without_wallet() {
+    fn rejects_agent_passport_create_with_policy_without_wallet() {
         let err = match Cli::try_parse_from([
             "kitepass",
-            "access-key",
+            "agent-passport",
             "create",
-            "--policy-id",
+            "--passport-policy-id",
             "pol_123",
         ]) {
-            Ok(_) => panic!("policy-only access-key create should fail"),
+            Ok(_) => panic!("policy-only agent-passport create should fail"),
             Err(err) => err,
         };
 
@@ -406,12 +406,12 @@ mod tests {
     fn rejects_policy_create_direct_binding_flag() {
         let err = match Cli::try_parse_from([
             "kitepass",
-            "policy",
+            "passport-policy",
             "create",
             "--wallet-id",
             "wal_123",
-            "--access-key-id",
-            "aak_123",
+            "--agent-passport-id",
+            "agp_123",
             "--allowed-chain",
             "eip155:8453",
             "--allowed-action",
@@ -426,6 +426,6 @@ mod tests {
         };
 
         assert_eq!(err.kind(), ErrorKind::UnknownArgument);
-        assert!(err.to_string().contains("--access-key-id"));
+        assert!(err.to_string().contains("--agent-passport-id"));
     }
 }

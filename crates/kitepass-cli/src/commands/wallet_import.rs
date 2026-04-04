@@ -205,8 +205,8 @@ mod tests {
                 authorization_model: "dual_sign_authorization_tee_signer".to_string(),
             },
             channel_binding: ChannelBinding {
-                owner_id: "own_dev".to_string(),
-                owner_session_id: "oas_dev".to_string(),
+                principal_account_id: "pac_dev".to_string(),
+                principal_session_id: "pss_dev".to_string(),
                 request_id: "req_123".to_string(),
             },
             expires_at: Utc::now() + Duration::minutes(10),

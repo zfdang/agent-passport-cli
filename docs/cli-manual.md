@@ -16,13 +16,13 @@ kitepass 0.1.0 (1a2b3c4d)
 
 ## 2. Owner Login
 
-Owner actions require an authenticated owner session:
+Owner actions require an authenticated principal session:
 
 ```bash
 kitepass login
 ```
 
-The CLI starts the device-code flow, opens the browser when possible, and stores the owner session under `~/.kitepass/`.
+The CLI starts the device-code flow, opens the browser when possible, and stores the principal session under `~/.kitepass/`.
 
 Current local storage behavior:
 
@@ -50,13 +50,13 @@ Notes:
 - wallet import currently supports the EVM chain family only
 - `evm`, `eip155`, and `base` are normalized to the same EVM path
 
-## 4. Access-Key Provisioning Model
+## 4. Agent Passport Provisioning Model
 
 The current provisioning flow is policy-first:
 
 1. create a policy for the wallet
 2. activate that policy
-3. create a bound runtime access key attached to the wallet and policy
+3. create a bound runtime agent passport attached to the wallet and policy
 
 This sequence is the most reliable way to reach a successful runtime signing flow today.
 
@@ -77,25 +77,25 @@ kitepass --json policy create \
 kitepass --json policy activate --policy-id <policy-id>
 ```
 
-### 4.2 Create The Bound Runtime Access Key
+### 4.2 Create The Bound Runtime Agent Passport
 
 ```bash
-kitepass --json access-key create \
+kitepass --json agent-passport create \
   --name trading-bot \
   --wallet-id <wallet-id> \
   --policy-id <policy-id>
 ```
 
-This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Combined Token:
+This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Agent Passport Token:
 
 ```text
-kite_tk_<access_key_id>__<secret_key>
+kite_apt_<agent_passport_id>__<secret_key>
 ```
 
 Important notes:
 
 - the private key is not stored as plaintext PEM
-- the Combined Token is shown only once
+- the Agent Passport Token is shown only once
 - if the token is lost, revoke the key and mint a new one
 - there is no post-creation bind command; create a new bound key instead
 
@@ -123,17 +123,17 @@ kitepass --json profile delete --name trading-bot
 
 ## 6. Signing
 
-Export the Combined Token from the bound runtime key before signing:
+Export the Agent Passport Token from the bound runtime key before signing:
 
 ```bash
-export KITE_AGENT_TOKEN="kite_tk_<access_key_id>__<secret_key>"
+export KITE_AGENT_PASSPORT_TOKEN="kite_apt_<agent_passport_id>__<secret_key>"
 ```
 
 ### 6.1 Validate Routing And Policy
 
 ```bash
 kitepass --json sign --validate \
-  --access-key-id <access-key-id> \
+  --agent-passport-id <agent-passport-id> \
   --wallet-id <wallet-id> \
   --chain-id eip155:8453 \
   --signing-type transaction \
@@ -145,14 +145,14 @@ kitepass --json sign --validate \
 `kitepass sign --validate` can be used either:
 
 - as an owner-facing diagnostic command after `kitepass login`
-- or as an agent-facing proof flow when `KITE_AGENT_TOKEN` is present
+- or as an agent-facing proof flow when `KITE_AGENT_PASSPORT_TOKEN` is present
 
 ### 6.2 Sign Without Broadcasting
 
 ```bash
-KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
   kitepass --json sign \
-    --access-key-id <access-key-id> \
+    --agent-passport-id <agent-passport-id> \
     --wallet-id <wallet-id> \
     --chain-id eip155:8453 \
     --signing-type transaction \
@@ -164,18 +164,18 @@ KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
 Key behavior:
 
 - `chain_id` uses CAIP-2 notation, such as `eip155:8453`
-- `kitepass sign` requires `KITE_AGENT_TOKEN`
+- `kitepass sign` requires `KITE_AGENT_PASSPORT_TOKEN`
 - `kitepass sign` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
-- the CLI parses the embedded `access_key_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
+- the CLI parses the embedded `agent_passport_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
 - the Gateway then validates agent proof, policy state, wallet binding, and limits before returning the final signature
 
 ### 6.3 Sign And Broadcast
 
 ```bash
-KITE_AGENT_TOKEN="$KITE_AGENT_TOKEN" \
+KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
   kitepass --json sign \
     --broadcast \
-    --access-key-id <access-key-id> \
+    --agent-passport-id <agent-passport-id> \
     --wallet-id <wallet-id> \
     --chain-id eip155:8453 \
     --signing-type transaction \
@@ -203,16 +203,16 @@ Kitepass CLI stores state in `~/.kitepass/`:
   - API settings
   - encrypted owner access-token envelope
 - `access-token.secret`
-  - local secret used to decrypt the stored owner token
+  - local secret used to decrypt the stored principal session token
 - `agents.toml`
   - encrypted local agent profiles
 
 ## 9. Troubleshooting
 
-- **Missing Combined Token**
-  - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_AGENT_TOKEN`
+- **Missing Agent Passport Token**
+  - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_AGENT_PASSPORT_TOKEN`
 - **No local encrypted profile**
-  - the access key was created on another machine, or `agents.toml` is missing
+  - the agent passport was created on another machine, or `agents.toml` is missing
 - **Policy creation order**
   - create the policy first, then provision the bound runtime key with `--wallet-id` and `--policy-id`
 - **Wallet import chain family**

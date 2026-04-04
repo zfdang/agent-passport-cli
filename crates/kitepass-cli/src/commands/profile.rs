@@ -7,7 +7,7 @@ use serde_json::json;
 #[derive(Serialize)]
 struct AgentProfileSummary<'a> {
     name: &'a str,
-    access_key_id: &'a str,
+    agent_passport_id: &'a str,
     public_key_hex: &'a str,
     private_key_storage: &'static str,
     encryption_cipher: &'a str,
@@ -27,7 +27,7 @@ pub async fn run(action: ProfileAction, runtime: &Runtime) -> Result<()> {
                 .iter()
                 .map(|agent| AgentProfileSummary {
                     name: &agent.name,
-                    access_key_id: &agent.access_key_id,
+                    agent_passport_id: &agent.agent_passport_id,
                     public_key_hex: &agent.public_key_hex,
                     private_key_storage: "encrypted_inline",
                     encryption_cipher: &agent.encrypted_key.cipher,
