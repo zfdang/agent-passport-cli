@@ -1,6 +1,6 @@
 # Agent Security Design
 
-This document explains how `kitepass-cli` protects agent signing credentials after the Agent Passport Token and encrypted-profile migration.
+This document explains how `kitepass-cli` protects agent signing credentials after the Passport Token and encrypted-profile migration.
 
 ## Security Goals
 
@@ -15,10 +15,10 @@ The runtime model is designed to satisfy four goals:
 
 The system now uses two different credential types:
 
-- **Principal session token**: stored as an encrypted envelope in `~/.kitepass/config.toml`, with a local decrypt secret in `~/.kitepass/access-token.secret`; used for login, wallet import, policy management, and agent-passport provisioning
-- **Agent Passport Token**: shown once during `kitepass agent-passport create`; used by the agent runtime to unlock the encrypted local key
+- **Principal session token**: stored as an encrypted envelope in `~/.kitepass/config.toml`, with a local decrypt secret in `~/.kitepass/access-token.secret`; used for login, wallet import, policy management, and passport provisioning
+- **Passport Token**: shown once during `kitepass passport create`; used by the agent runtime to unlock the encrypted local key
 
-Agent Passport Token format:
+Passport Token format:
 
 ```text
 kite_apt_<agent_passport_id>__<secret_key>
@@ -29,7 +29,7 @@ The token carries:
 - the Passport `agent_passport_id`, which identifies the delegated authority on the Gateway
 - a random secret, which is only used locally to decrypt the stored private-key envelope
 
-The CLI does not store the Agent Passport Token on disk.
+The CLI does not store the Passport Token on disk.
 
 ## Local Storage Format
 
@@ -61,12 +61,12 @@ Plaintext PEM files are no longer part of the runtime design.
 - **Salt**: randomly generated per envelope
 - **Nonce**: randomly generated per encryption
 
-The Agent Passport Token secret is the input keying material. The CLI derives the AES key locally and decrypts the envelope only in process memory right before signing.
+The Passport Token secret is the input keying material. The CLI derives the AES key locally and decrypts the envelope only in process memory right before signing.
 
 Security properties:
 
 - losing `agents.toml` alone is not enough to recover the private key
-- losing the Agent Passport Token alone is not enough to sign without the matching local encrypted profile
+- losing the Passport Token alone is not enough to sign without the matching local encrypted profile
 - losing both means the delegated authority should be treated as compromised and rotated
 
 ## Signing Flow
@@ -102,11 +102,11 @@ When `wallet_id` is omitted, the CLI sends `wallet_selector=auto` during `Valida
 
 ## Operational Guidance
 
-- Save the Agent Passport Token in a secure secret manager immediately after creation.
+- Save the Passport Token in a secure secret manager immediately after creation.
 - Do not commit `agents.toml` to source control.
-- If the Agent Passport Token is lost, revoke the agent passport and create a new one.
-- If `agents.toml` is moved to another machine, the Agent Passport Token still must be supplied separately for signing.
-- If the Agent Passport Token and the local encrypted profile are both exposed, rotate the delegated authority.
+- If the Passport Token is lost, revoke the agent passport and create a new one.
+- If `agents.toml` is moved to another machine, the Passport Token still must be supplied separately for signing.
+- If the Passport Token and the local encrypted profile are both exposed, rotate the delegated authority.
 
 ## Failure Modes
 

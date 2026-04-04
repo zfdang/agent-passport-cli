@@ -18,7 +18,7 @@ kite_apt_<agent_passport_id>__<secret_key>
 
 当前实现特点：
 
-- `kitepass agent-passport create` 只展示一次 Agent Passport Token
+- `kitepass passport create` 只展示一次 Agent Passport Token
 - CLI 不会把 Agent Passport Token 直接写入本地文件
 - 运行时通过 `KITE_AGENT_PASSPORT_TOKEN` 读取它
 - Token 中的 `agent_passport_id` 用于匹配本地 profile

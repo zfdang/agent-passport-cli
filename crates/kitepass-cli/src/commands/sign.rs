@@ -16,7 +16,7 @@ use uuid::Uuid;
 pub struct SignArgs {
     pub validate: bool,
     pub broadcast: bool,
-    pub agent_passport_id: Option<String>,
+    pub passport_id: Option<String>,
     pub wallet_id: Option<String>,
     pub chain_id: String,
     pub signing_type: String,
@@ -206,7 +206,7 @@ fn resolve_signer(
     if let Some(agent_passport_id) = cli_agent_passport_id {
         if agent_passport_id != token.agent_passport_id {
             bail!(
-                "`--agent-passport-id` ({agent_passport_id}) does not match the agent passport embedded in KITE_AGENT_PASSPORT_TOKEN ({})",
+                "`--passport-id` ({agent_passport_id}) does not match the passport embedded in KITE_AGENT_PASSPORT_TOKEN ({})",
                 token.agent_passport_id
             );
         }
@@ -217,7 +217,7 @@ fn resolve_signer(
         .cloned()
         .with_context(|| {
             format!(
-                "No local encrypted agent profile found for agent_passport_id `{}`. Recreate it on this machine with `kitepass agent-passport create --name <profile>` or sync `~/.kitepass/agents.toml`.",
+                "No local encrypted agent profile found for agent_passport_id `{}`. Recreate it on this machine with `kitepass passport create --name <profile>` or sync `~/.kitepass/agents.toml`.",
                 token.agent_passport_id
             )
         })?;
@@ -270,7 +270,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
         let request_id = format!("req_{}", Uuid::new_v4().simple());
         let wallet_selector = wallet_selector_for(&args.wallet_id);
         let result = if env_agent_token().is_some() {
-            let signer = resolve_signer(args.agent_passport_id, &registry)?;
+            let signer = resolve_signer(args.passport_id, &registry)?;
             let proof_signature = sign_hex(
                 &signer.agent_key,
                 &canonical_validate_message(&CanonicalValidateIntent {
@@ -307,7 +307,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 .context("Failed to initialize Passport API client")?
                 .with_token(token);
             let agent_passport_id =
-                resolve_validate_agent_passport_id(args.agent_passport_id, &registry)?;
+                resolve_validate_agent_passport_id(args.passport_id, &registry)?;
             owner_client
                 .validate_sign_intent(&ValidateSignIntentRequest {
                     request_id,
@@ -331,7 +331,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
         runtime.print_data(&result)?;
     } else {
         // Signing modes: default is signature only; --broadcast forwards after signing.
-        let resolved_signer = resolve_signer(args.agent_passport_id, &registry)?;
+        let resolved_signer = resolve_signer(args.passport_id, &registry)?;
         let wallet_selector = wallet_selector_for(&args.wallet_id);
         let (mode, mode_name) = signing_mode(args.broadcast);
 

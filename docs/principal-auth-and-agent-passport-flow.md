@@ -17,7 +17,7 @@ Implementation note as of 2026-04-03:
 The flow is intentionally split into two identities:
 
 - **Owner identity**
-  - used for wallet import, agent-passport provisioning, policy management, and
+  - used for wallet import, passport provisioning, policy management, and
     other administrative actions
 - **Agent identity**
   - used at runtime by an autonomous agent to request signing within an
@@ -50,7 +50,7 @@ sequenceDiagram
     Gateway->>Authz: persist policy
     Gateway-->>CLI: policy_id
 
-    Owner->>CLI: kitepass agent-passport create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
+    Owner->>CLI: kitepass passport create --name trading-bot --wallet-id <wallet_id> --policy-id <policy_id>
     CLI->>Gateway: prepare + approve + finalize bound runtime agent passport
     Gateway-->>CLI: runtime agent_passport_id + bindings
     CLI-->>Owner: display runtime Agent Passport Token
@@ -120,13 +120,13 @@ kitepass policy create \
 
 kitepass policy activate --policy-id <policy_id>
 
-kitepass agent-passport create \
+kitepass passport create \
   --name trading-bot \
   --wallet-id <wallet_id> \
   --policy-id <policy_id>
 ```
 
-During `agent-passport create`, the CLI:
+During `passport create`, the CLI:
 
 1. generates a new Ed25519 keypair locally
 2. derives a random secret and encrypts the private key into an inline
@@ -163,7 +163,7 @@ When the agent wants a signature, the CLI:
 7. signs the challenge payload locally and creates an agent session
 8. receives a `session_nonce`
 9. builds a canonical sign intent
-10. signs that intent locally with the decrypted agent-passport private key
+10. signs that intent locally with the decrypted passport private key
 11. sends the sign request plus the resulting `agent_proof` to Passport
 
 Passport then verifies:

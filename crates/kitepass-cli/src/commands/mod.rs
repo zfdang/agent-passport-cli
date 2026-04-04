@@ -27,13 +27,13 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login => login::run(&runtime).await,
         Command::Wallet { action } => wallet::run(action, &runtime).await,
-        Command::AgentPassport { action } => agent_passport::run(action, &runtime).await,
+        Command::Passport { action } => agent_passport::run(action, &runtime).await,
         Command::PassportPolicy { action } => passport_policy::run(action, &runtime).await,
         Command::Profile { action } => profile::run(action, &runtime).await,
         Command::Sign {
             validate,
             broadcast,
-            agent_passport_id,
+            passport_id,
             wallet_id,
             chain_id,
             signing_type,
@@ -45,7 +45,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
                 sign::SignArgs {
                     validate,
                     broadcast,
-                    agent_passport_id,
+                    passport_id,
                     wallet_id,
                     chain_id,
                     signing_type,

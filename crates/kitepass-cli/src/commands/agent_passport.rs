@@ -1,5 +1,5 @@
 use crate::{
-    cli::AgentPassportAction,
+    cli::PassportAction,
     commands::{load_agent_registry, load_cli_config},
     error::CliError,
     runtime::Runtime,
@@ -29,7 +29,7 @@ struct AgentPassportCreateOutput<'a> {
     activated: bool,
 }
 
-pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
+pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
     let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
@@ -42,14 +42,14 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
         .with_token(token);
 
     match action {
-        AgentPassportAction::List => {
+        PassportAction::List => {
             let agent_passports = client
                 .list_agent_passports()
                 .await
                 .context("Failed to list agent passports")?;
             runtime.print_data(&agent_passports)?;
         }
-        AgentPassportAction::Create {
+        PassportAction::Create {
             name,
             wallet_id,
             passport_policy_id,
@@ -75,10 +75,10 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
             }
 
             if profile_name == DEFAULT_AGENT_PROFILE {
-                runtime.progress("Generating new Ed25519 Agent Passport for default profile...");
+                runtime.progress("Generating new Ed25519 Passport for default profile...");
             } else {
                 runtime.progress(format!(
-                    "Generating new Ed25519 Agent Passport for profile `{profile_name}`..."
+                    "Generating new Ed25519 Passport for profile `{profile_name}`..."
                 ));
             }
 
@@ -184,7 +184,7 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
             }
 
             runtime.important("╔══════════════════════════════════════════════════════════╗");
-            runtime.important("║  IMPORTANT: Save the Agent Passport Token below immediately!   ║");
+            runtime.important("║  IMPORTANT: Save the Passport Token below immediately!         ║");
             runtime.important("║  It will NOT be displayed again.                         ║");
             runtime.important("║  If lost, revoke this key and create a new one.          ║");
             runtime.important("╚══════════════════════════════════════════════════════════╝");
@@ -201,36 +201,32 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
 
             if !persistence_errors.is_empty() {
                 anyhow::bail!(
-                    "Agent Passport was created, but local persistence is incomplete: {}. Save the Agent Passport Token above, then fix the local config/registry or revoke and recreate the agent passport if needed.",
+                    "Passport was created, but local persistence is incomplete: {}. Save the Passport Token above, then fix the local config/registry or revoke and recreate the passport if needed.",
                     persistence_errors.join("; ")
                 );
             }
         }
-        AgentPassportAction::Get { agent_passport_id } => {
+        PassportAction::Get { passport_id } => {
             let agent_passport = client
-                .get_agent_passport(&agent_passport_id)
+                .get_agent_passport(&passport_id)
                 .await
-                .with_context(|| format!("Failed to get agent passport {agent_passport_id}"))?;
+                .with_context(|| format!("Failed to get passport {passport_id}"))?;
             let bindings = client
-                .list_bindings(&agent_passport_id)
+                .list_bindings(&passport_id)
                 .await
-                .with_context(|| {
-                    format!("Failed to list bindings for agent passport {agent_passport_id}")
-                })?;
+                .with_context(|| format!("Failed to list bindings for passport {passport_id}"))?;
             let usage = client
-                .get_agent_passport_usage(&agent_passport_id)
+                .get_agent_passport_usage(&passport_id)
                 .await
-                .with_context(|| {
-                    format!("Failed to get usage for agent passport {agent_passport_id}")
-                })?;
+                .with_context(|| format!("Failed to get usage for passport {passport_id}"))?;
             runtime.print_data(&serde_json::json!({
                 "agent_passport": agent_passport,
                 "bindings": bindings,
                 "usage": usage,
             }))?;
         }
-        AgentPassportAction::Freeze { agent_passport_id } => {
-            let key_id = agent_passport_id;
+        PassportAction::Freeze { passport_id } => {
+            let key_id = passport_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
@@ -245,8 +241,8 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
                 .with_context(|| format!("Failed to freeze agent passport {key_id}"))?;
             runtime.print_data(&agent_passport)?;
         }
-        AgentPassportAction::Revoke { agent_passport_id } => {
-            let key_id = agent_passport_id;
+        PassportAction::Revoke { passport_id } => {
+            let key_id = passport_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,

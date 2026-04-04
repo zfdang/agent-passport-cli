@@ -117,7 +117,7 @@ fn agent_passport_create_dry_run_emits_json_without_writing_keys() {
         .args([
             "--json",
             "--dry-run",
-            "agent-passport",
+            "passport",
             "create",
             "--name",
             "worker-key",
@@ -186,13 +186,13 @@ async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile()
         .await;
 
     cli_command(&tempdir)
-        .args(["--json", "agent-passport", "create", "--name", "worker-key"])
+        .args(["--json", "passport", "create", "--name", "worker-key"])
         .assert()
         .success()
         .stdout(contains("\"agent_passport_id\": \"agp_123\""))
         .stdout(contains("\"agent_passport_token\": \"kite_apt_agp_123__"))
         .stderr(contains(
-            "IMPORTANT: Save the Agent Passport Token below immediately!",
+            "IMPORTANT: Save the Passport Token below immediately!",
         ));
 
     assert!(
@@ -628,13 +628,7 @@ async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
         .await;
 
     cli_command(&tempdir)
-        .args([
-            "--json",
-            "agent-passport",
-            "get",
-            "--agent-passport-id",
-            "agp_123",
-        ])
+        .args(["--json", "passport", "get", "--passport-id", "agp_123"])
         .assert()
         .success()
         .stdout(contains("\"agent_passport_id\": \"agp_123\""))
@@ -684,9 +678,9 @@ async fn agent_passport_freeze_and_revoke_render_json_output() {
     cli_command(&tempdir)
         .args([
             "--json",
-            "agent-passport",
+            "passport",
             "freeze",
-            "--agent-passport-id",
+            "--passport-id",
             "agp_freeze_123",
         ])
         .assert()
@@ -697,9 +691,9 @@ async fn agent_passport_freeze_and_revoke_render_json_output() {
     cli_command(&tempdir)
         .args([
             "--json",
-            "agent-passport",
+            "passport",
             "revoke",
-            "--agent-passport-id",
+            "--passport-id",
             "agp_revoke_123",
         ])
         .assert()
@@ -1253,7 +1247,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .args([
             "--json",
             "sign",
-            "--agent-passport-id",
+            "--passport-id",
             "agp_123",
             "--wallet-id",
             "wal_123",

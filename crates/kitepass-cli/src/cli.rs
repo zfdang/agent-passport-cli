@@ -47,10 +47,10 @@ pub enum Command {
         action: WalletAction,
     },
 
-    /// Agent Passport management
-    AgentPassport {
+    /// Passport management
+    Passport {
         #[command(subcommand)]
-        action: AgentPassportAction,
+        action: PassportAction,
     },
 
     /// Passport Policy management
@@ -75,9 +75,9 @@ pub enum Command {
         #[arg(long, default_value_t = false, conflicts_with = "validate")]
         broadcast: bool,
 
-        /// Explicit Agent Passport id; must match `KITE_AGENT_PASSPORT_TOKEN` when provided
+        /// Explicit Passport id; must match `KITE_AGENT_PASSPORT_TOKEN` when provided
         #[arg(long)]
-        agent_passport_id: Option<String>,
+        passport_id: Option<String>,
         /// Explicit wallet id; omit to allow auto routing by chain
         #[arg(long)]
         wallet_id: Option<String>,
@@ -142,10 +142,10 @@ pub enum WalletAction {
 }
 
 #[derive(Subcommand)]
-pub enum AgentPassportAction {
-    /// List agent passports
+pub enum PassportAction {
+    /// List passports
     List,
-    /// Create or replace a local agent profile backed by a new agent passport
+    /// Create or replace a local agent profile backed by a new passport
     Create {
         /// Local profile name. Defaults to the selected profile or `default`.
         #[arg(long)]
@@ -160,23 +160,23 @@ pub enum AgentPassportAction {
         #[arg(long, default_value_t = false)]
         no_activate: bool,
     },
-    /// Get agent passport details
+    /// Get passport details
     Get {
-        /// Agent Passport id, for example `agp_...`
+        /// Passport id, for example `agp_...`
         #[arg(long)]
-        agent_passport_id: String,
+        passport_id: String,
     },
-    /// Freeze an agent passport
+    /// Freeze a passport
     Freeze {
-        /// Agent Passport id, for example `agp_...`
+        /// Passport id, for example `agp_...`
         #[arg(long)]
-        agent_passport_id: String,
+        passport_id: String,
     },
-    /// Revoke an agent passport
+    /// Revoke a passport
     Revoke {
-        /// Agent Passport id, for example `agp_...`
+        /// Passport id, for example `agp_...`
         #[arg(long)]
-        agent_passport_id: String,
+        passport_id: String,
     },
 }
 
@@ -369,32 +369,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_agent_passport_create_with_wallet_without_policy() {
-        let err = match Cli::try_parse_from([
-            "kitepass",
-            "agent-passport",
-            "create",
-            "--wallet-id",
-            "wal_123",
-        ]) {
-            Ok(_) => panic!("wallet-only agent-passport create should fail"),
-            Err(err) => err,
-        };
+    fn rejects_passport_create_with_wallet_without_policy() {
+        let err =
+            match Cli::try_parse_from(["kitepass", "passport", "create", "--wallet-id", "wal_123"])
+            {
+                Ok(_) => panic!("wallet-only passport create should fail"),
+                Err(err) => err,
+            };
 
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
         assert!(err.to_string().contains("--passport-policy-id"));
     }
 
     #[test]
-    fn rejects_agent_passport_create_with_policy_without_wallet() {
+    fn rejects_passport_create_with_policy_without_wallet() {
         let err = match Cli::try_parse_from([
             "kitepass",
-            "agent-passport",
+            "passport",
             "create",
             "--passport-policy-id",
             "pol_123",
         ]) {
-            Ok(_) => panic!("policy-only agent-passport create should fail"),
+            Ok(_) => panic!("policy-only passport create should fail"),
             Err(err) => err,
         };
 
@@ -410,7 +406,7 @@ mod tests {
             "create",
             "--wallet-id",
             "wal_123",
-            "--agent-passport-id",
+            "--passport-id",
             "agp_123",
             "--allowed-chain",
             "eip155:8453",
@@ -426,6 +422,6 @@ mod tests {
         };
 
         assert_eq!(err.kind(), ErrorKind::UnknownArgument);
-        assert!(err.to_string().contains("--agent-passport-id"));
+        assert!(err.to_string().contains("--passport-id"));
     }
 }

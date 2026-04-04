@@ -133,7 +133,7 @@ export KITE_AGENT_PASSPORT_TOKEN="kite_apt_<agent_passport_id>__<secret_key>"
 
 ```bash
 kitepass --json sign --validate \
-  --agent-passport-id <agent-passport-id> \
+  --passport-id <passport-id> \
   --wallet-id <wallet-id> \
   --chain-id eip155:8453 \
   --signing-type transaction \
@@ -152,7 +152,7 @@ kitepass --json sign --validate \
 ```bash
 KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
   kitepass --json sign \
-    --agent-passport-id <agent-passport-id> \
+    --passport-id <passport-id> \
     --wallet-id <wallet-id> \
     --chain-id eip155:8453 \
     --signing-type transaction \
@@ -175,7 +175,7 @@ Key behavior:
 KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
   kitepass --json sign \
     --broadcast \
-    --agent-passport-id <agent-passport-id> \
+    --passport-id <passport-id> \
     --wallet-id <wallet-id> \
     --chain-id eip155:8453 \
     --signing-type transaction \
