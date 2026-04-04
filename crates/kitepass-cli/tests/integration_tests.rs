@@ -280,7 +280,7 @@ async fn test_owner_query_surfaces() {
     Mock::given(method("GET"))
         .and(path("/v1/passport-policies"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "policies": [{
+            "passport_policies": [{
                 "passport_policy_id": "pol_123",
                 "binding_id": "bind_123",
                 "wallet_id": "wal_123",

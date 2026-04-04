@@ -519,8 +519,6 @@ pub(crate) struct AuditEventListResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
-
     // ── ChainFamily::parse ──────────────────────────────────────────
 
     #[test]

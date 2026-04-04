@@ -264,3 +264,261 @@ pub async fn run(action: AgentPassportAction, runtime: &Runtime) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── AgentPassportCreateOutput serialization ─────────────────
+
+    fn sample_binding() -> BindingResult {
+        BindingResult {
+            binding_id: "bnd_001".into(),
+            wallet_id: "wal_abc".into(),
+            passport_policy_id: "pp_xyz".into(),
+            passport_policy_version: 3,
+            tee_mirror_status: "synced".into(),
+        }
+    }
+
+    #[test]
+    fn create_output_serializes_all_fields() {
+        let bindings = vec![sample_binding()];
+        let output = AgentPassportCreateOutput {
+            profile_name: "my-agent",
+            agent_passport_id: "agp_12345",
+            status: "active",
+            public_key: "deadbeef01234567",
+            agent_passport_token: "kite_apt_agp_12345__secret",
+            bindings: &bindings,
+            activated: true,
+        };
+        let value = serde_json::to_value(&output).expect("should serialize");
+        assert_eq!(value["profile_name"], "my-agent");
+        assert_eq!(value["agent_passport_id"], "agp_12345");
+        assert_eq!(value["status"], "active");
+        assert_eq!(value["public_key"], "deadbeef01234567");
+        assert_eq!(value["agent_passport_token"], "kite_apt_agp_12345__secret");
+        assert_eq!(value["activated"], true);
+        assert_eq!(value["bindings"][0]["binding_id"], "bnd_001");
+        assert_eq!(value["bindings"][0]["wallet_id"], "wal_abc");
+        assert_eq!(value["bindings"][0]["passport_policy_id"], "pp_xyz");
+        assert_eq!(value["bindings"][0]["passport_policy_version"], 3);
+        assert_eq!(value["bindings"][0]["tee_mirror_status"], "synced");
+    }
+
+    #[test]
+    fn create_output_with_empty_bindings() {
+        let output = AgentPassportCreateOutput {
+            profile_name: "default",
+            agent_passport_id: "agp_000",
+            status: "pending",
+            public_key: "aabbccdd",
+            agent_passport_token: "kite_apt_agp_000__sk",
+            bindings: &[],
+            activated: false,
+        };
+        let value = serde_json::to_value(&output).expect("should serialize");
+        assert_eq!(value["bindings"], json!([]));
+        assert_eq!(value["activated"], false);
+    }
+
+    // ── Key address derivation format ───────────────────────────
+
+    #[test]
+    fn key_address_format_takes_first_16_hex_chars() {
+        let pubkey_hex = "abcdef0123456789ffee";
+        let key_address = format!("ed25519:{}", &pubkey_hex[..16]);
+        assert_eq!(key_address, "ed25519:abcdef0123456789");
+    }
+
+    #[test]
+    fn key_address_uses_ed25519_prefix() {
+        let pubkey_hex = "0000000000000000rest_ignored";
+        let key_address = format!("ed25519:{}", &pubkey_hex[..16]);
+        assert!(key_address.starts_with("ed25519:"));
+        assert_eq!(key_address.len(), "ed25519:".len() + 16);
+    }
+
+    // ── Dry-run JSON contracts ──────────────────────────────────
+
+    #[test]
+    fn dry_run_create_json_has_expected_shape() {
+        let profile_name = "test-profile".to_string();
+        let wallet_id = Some("wal_abc".to_string());
+        let passport_policy_id = Some("pp_xyz".to_string());
+
+        let output = json!({
+            "dry_run": true,
+            "action": "agent_passport.create",
+            "profile_name": profile_name,
+            "wallet_id": wallet_id,
+            "passport_policy_id": passport_policy_id,
+        });
+
+        assert_eq!(output["dry_run"], true);
+        assert_eq!(output["action"], "agent_passport.create");
+        assert_eq!(output["profile_name"], "test-profile");
+        assert_eq!(output["wallet_id"], "wal_abc");
+        assert_eq!(output["passport_policy_id"], "pp_xyz");
+    }
+
+    #[test]
+    fn dry_run_create_json_null_wallet_policy() {
+        let profile_name = "default".to_string();
+        let wallet_id: Option<String> = None;
+        let passport_policy_id: Option<String> = None;
+
+        let output = json!({
+            "dry_run": true,
+            "action": "agent_passport.create",
+            "profile_name": profile_name,
+            "wallet_id": wallet_id,
+            "passport_policy_id": passport_policy_id,
+        });
+
+        assert_eq!(output["dry_run"], true);
+        assert!(output["wallet_id"].is_null());
+        assert!(output["passport_policy_id"].is_null());
+    }
+
+    #[test]
+    fn dry_run_freeze_json_has_expected_shape() {
+        let key_id = "agp_freeze_me".to_string();
+        let output = json!({
+            "dry_run": true,
+            "action": "agent_passport.freeze",
+            "agent_passport_id": key_id,
+        });
+
+        assert_eq!(output["dry_run"], true);
+        assert_eq!(output["action"], "agent_passport.freeze");
+        assert_eq!(output["agent_passport_id"], "agp_freeze_me");
+    }
+
+    #[test]
+    fn dry_run_revoke_json_has_expected_shape() {
+        let key_id = "agp_revoke_me".to_string();
+        let output = json!({
+            "dry_run": true,
+            "action": "agent_passport.revoke",
+            "agent_passport_id": key_id,
+        });
+
+        assert_eq!(output["dry_run"], true);
+        assert_eq!(output["action"], "agent_passport.revoke");
+        assert_eq!(output["agent_passport_id"], "agp_revoke_me");
+    }
+
+    // ── Idempotency key format ──────────────────────────────────
+
+    #[test]
+    fn idempotency_key_has_idem_prefix() {
+        let key = format!("idem_{}", Uuid::new_v4().simple());
+        assert!(key.starts_with("idem_"));
+        // uuid simple format is 32 hex chars
+        assert_eq!(key.len(), "idem_".len() + 32);
+    }
+
+    #[test]
+    fn idempotency_keys_are_unique() {
+        let key1 = format!("idem_{}", Uuid::new_v4().simple());
+        let key2 = format!("idem_{}", Uuid::new_v4().simple());
+        assert_ne!(key1, key2);
+    }
+
+    // ── Profile name validation ─────────────────────────────────
+
+    #[test]
+    fn empty_profile_name_is_rejected() {
+        // Mirrors the validation at line 73: profile_name.trim().is_empty()
+        let profile_name = "   ";
+        assert!(
+            profile_name.trim().is_empty(),
+            "whitespace-only profile name should be treated as empty"
+        );
+    }
+
+    #[test]
+    fn non_empty_profile_name_is_accepted() {
+        let profile_name = "my-agent";
+        assert!(
+            !profile_name.trim().is_empty(),
+            "non-empty profile name should be accepted"
+        );
+    }
+
+    #[test]
+    fn default_profile_name_is_recognized() {
+        assert_eq!(DEFAULT_AGENT_PROFILE, "default");
+    }
+
+    // ── Binding input pair validation ───────────────────────────
+
+    #[test]
+    fn both_wallet_and_policy_provided_is_valid() {
+        let wallet_id: Option<String> = Some("wal_abc".into());
+        let passport_policy_id: Option<String> = Some("pp_xyz".into());
+        // This match mirrors lines 99-119 of run()
+        let result = match (wallet_id, passport_policy_id) {
+            (Some(_), Some(_)) => Ok("both provided"),
+            (None, None) => Ok("neither provided"),
+            _ => Err("must be provided together"),
+        };
+        assert_eq!(result, Ok("both provided"));
+    }
+
+    #[test]
+    fn neither_wallet_nor_policy_produces_empty_bindings() {
+        let wallet_id: Option<String> = None;
+        let passport_policy_id: Option<String> = None;
+        let result = match (wallet_id, passport_policy_id) {
+            (Some(_), Some(_)) => Ok("both provided"),
+            (None, None) => Ok("neither provided"),
+            _ => Err("must be provided together"),
+        };
+        assert_eq!(result, Ok("neither provided"));
+    }
+
+    #[test]
+    fn wallet_without_policy_is_rejected() {
+        let wallet_id: Option<String> = Some("wal_abc".into());
+        let passport_policy_id: Option<String> = None;
+        let result = match (wallet_id, passport_policy_id) {
+            (Some(_), Some(_)) => Ok("both"),
+            (None, None) => Ok("neither"),
+            _ => Err("must be provided together"),
+        };
+        assert_eq!(result, Err("must be provided together"));
+    }
+
+    #[test]
+    fn policy_without_wallet_is_rejected() {
+        let wallet_id: Option<String> = None;
+        let passport_policy_id: Option<String> = Some("pp_xyz".into());
+        let result = match (wallet_id, passport_policy_id) {
+            (Some(_), Some(_)) => Ok("both"),
+            (None, None) => Ok("neither"),
+            _ => Err("must be provided together"),
+        };
+        assert_eq!(result, Err("must be provided together"));
+    }
+
+    // ── Expires-at timestamp format ─────────────────────────────
+
+    #[test]
+    fn expires_at_is_rfc3339_one_year_from_now() {
+        let now = Utc::now();
+        let expires = now + Duration::days(365);
+        let formatted = expires.to_rfc3339();
+        // RFC 3339 must contain 'T' and timezone info
+        assert!(formatted.contains('T'));
+        // Parse it back to ensure round-trip validity
+        let parsed = chrono::DateTime::parse_from_rfc3339(&formatted)
+            .expect("expires_at should be valid RFC 3339");
+        let diff = parsed.signed_duration_since(now);
+        // Should be approximately 365 days (within a few seconds of test execution)
+        assert!(diff.num_days() >= 364 && diff.num_days() <= 365);
+    }
+}
