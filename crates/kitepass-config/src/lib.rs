@@ -212,6 +212,7 @@ fn save_bytes_secure_new(contents: &[u8], path: &Path) -> Result<(), ConfigError
         options.write(true).create_new(true).mode(0o600);
         let mut file = options.open(path)?;
         file.write_all(contents)?;
+        file.sync_all()?;
     }
 
     #[cfg(not(unix))]
@@ -221,6 +222,7 @@ fn save_bytes_secure_new(contents: &[u8], path: &Path) -> Result<(), ConfigError
         let mut file = options.open(path)?;
         use std::io::Write;
         file.write_all(contents)?;
+        file.sync_all()?;
     }
 
     Ok(())

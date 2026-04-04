@@ -61,6 +61,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: ../agent-passport-protocol
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -186,6 +192,7 @@ jobs:
 
     permissions:
       contents: write
+      id-token: write
 
     env:
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
@@ -203,10 +210,21 @@ jobs:
           merge-multiple: true
           path: release-artifacts
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Sign release artifacts with Sigstore
+        run: |
+          for file in release-artifacts/*; do
+            if [[ -f "$file" ]]; then
+              cosign sign-blob --yes --output-certificate "$file.pem" --output-signature "$file.sig" "$file"
+            fi
+          done
+
       - name: Upload assets to GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "${RELEASE_TAG}" release-artifacts/*.tar.gz release-artifacts/*.tar.gz.sha256 --clobber
+          gh release upload "${RELEASE_TAG}" release-artifacts/*.* --clobber

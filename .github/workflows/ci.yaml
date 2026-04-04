@@ -25,6 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: ../agent-passport-protocol
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,6 +51,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: ../agent-passport-protocol
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -67,6 +79,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: ../agent-passport-protocol
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -85,6 +103,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: ../agent-passport-protocol
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

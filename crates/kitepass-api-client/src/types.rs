@@ -296,6 +296,7 @@ pub struct SignResponse {
     pub enclave_receipt: Option<String>,
     pub operation_id: Option<String>,
     pub poll_after_ms: Option<u64>,
+    pub reservation_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
