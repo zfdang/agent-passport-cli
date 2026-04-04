@@ -47,13 +47,6 @@ fn render_array(items: &[Value]) -> String {
             .iter()
             .filter_map(Value::as_object)
             .collect::<Vec<_>>();
-        if objects.len() != items.len() {
-            return items
-                .iter()
-                .map(render_value)
-                .collect::<Vec<_>>()
-                .join("\n");
-        }
 
         let mut headers = Vec::new();
         for object in &objects {

@@ -17,6 +17,7 @@ pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
 const ACCESS_TOKEN_SECRET_HEX_LEN: usize = 64;
 const ACCESS_TOKEN_SECRET_READ_RETRIES: usize = 20;
 const ACCESS_TOKEN_SECRET_READ_RETRY_DELAY_MS: u64 = 10;
+const CONFIG_SAVE_TMP_CREATE_RETRIES: usize = 20;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -110,26 +111,47 @@ pub(crate) fn save_toml_secure<T: Serialize>(value: &T, path: &Path) -> Result<(
 
     let content = toml::to_string(value)?;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut options = fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true).mode(0o600);
-        let mut file = options.open(path)?;
-        use std::io::Write;
-        file.write_all(content.as_bytes())?;
+    for attempt in 0..CONFIG_SAVE_TMP_CREATE_RETRIES {
+        let tmp_path = temp_config_path(path, attempt);
+        match save_bytes_secure_new(content.as_bytes(), &tmp_path) {
+            Ok(()) => {
+                if let Err(error) = fs::rename(&tmp_path, path) {
+                    let _ = fs::remove_file(&tmp_path);
+                    return Err(error.into());
+                }
+                return Ok(());
+            }
+            Err(ConfigError::Io(error)) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
     }
 
-    #[cfg(not(unix))]
-    {
-        fs::write(path, content)?;
-    }
-
-    Ok(())
+    Err(ConfigError::Io(std::io::Error::new(
+        ErrorKind::AlreadyExists,
+        "failed to allocate unique temporary config path",
+    )))
 }
 
 fn access_token_secret_path(config_path: &Path) -> PathBuf {
     config_path.with_file_name("access-token.secret")
+}
+
+fn temp_config_path(path: &Path, attempt: usize) -> PathBuf {
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("config");
+    let timestamp_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    parent.join(format!(
+        ".{file_name}.tmp.{}.{}.{}",
+        std::process::id(),
+        timestamp_ns,
+        attempt
+    ))
 }
 
 fn load_access_token_secret(config_path: &Path) -> Result<String, ConfigError> {
@@ -301,5 +323,44 @@ access_token = "legacy_token_123"
         assert_eq!(results.len(), 8);
         assert!(results.iter().all(|secret| secret == &results[0]));
         assert!(path.with_file_name("access-token.secret").exists());
+    }
+
+    #[test]
+    fn save_toml_secure_is_atomic_under_concurrent_writers() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let barrier = Arc::new(Barrier::new(8));
+
+        std::thread::scope(|scope| {
+            for index in 0..8 {
+                let barrier = Arc::clone(&barrier);
+                let path = path.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    let conf = CliConfig {
+                        api_url: Some(format!("https://api-{index}.example.test")),
+                        default_chain: Some("eip155:8453".to_string()),
+                        access_token: None,
+                        encrypted_access_token: None,
+                    };
+                    save_toml_secure(&conf, &path).unwrap();
+                });
+            }
+        });
+
+        let raw = fs::read_to_string(&path).unwrap();
+        let loaded: CliConfig = toml::from_str(&raw).unwrap();
+        assert!(loaded
+            .api_url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://api-"));
+
+        let mut entries = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        entries.sort();
+        assert_eq!(entries, vec!["config.toml".to_string()]);
     }
 }

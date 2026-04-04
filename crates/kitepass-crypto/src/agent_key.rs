@@ -59,12 +59,6 @@ impl AgentKey {
     }
 }
 
-impl Drop for AgentKey {
-    fn drop(&mut self) {
-        // ed25519_dalek::SigningKey implements Zeroize internally.
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
