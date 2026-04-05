@@ -13,8 +13,7 @@ curl -fsSL https://cli.kitepass.xyz/install.sh | sh
 Install a specific release:
 
 ```bash
-curl -fsSL https://cli.kitepass.xyz/install.sh | \
-  KITEPASS_VERSION=v0.1.0 sh
+curl -fsSL https://cli.kitepass.xyz/install.sh | KITEPASS_VERSION=v0.1.0 sh
 ```
 
 Verify the installed build:
