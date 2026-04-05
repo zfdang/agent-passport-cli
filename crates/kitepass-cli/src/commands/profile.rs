@@ -5,9 +5,9 @@ use serde::Serialize;
 use serde_json::json;
 
 #[derive(Serialize)]
-struct AgentProfileSummary<'a> {
+struct ProfileSummary<'a> {
     name: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     public_key_hex: &'a str,
     private_key_storage: &'static str,
     encryption_cipher: &'a str,
@@ -25,9 +25,9 @@ pub async fn run(action: ProfileAction, runtime: &Runtime) -> Result<()> {
             let profiles = registry
                 .agents
                 .iter()
-                .map(|agent| AgentProfileSummary {
+                .map(|agent| ProfileSummary {
                     name: &agent.name,
-                    agent_passport_id: &agent.agent_passport_id,
+                    passport_id: &agent.passport_id,
                     public_key_hex: &agent.public_key_hex,
                     private_key_storage: "encrypted_inline",
                     encryption_cipher: &agent.encrypted_key.cipher,
@@ -39,7 +39,7 @@ pub async fn run(action: ProfileAction, runtime: &Runtime) -> Result<()> {
             runtime.print_data(&json!({
                 "active_profile": registry.active_profile,
                 "selected_profile": selected_profile,
-                "agents": profiles,
+                "profiles": profiles,
             }))?;
         }
         ProfileAction::Use { name } => {

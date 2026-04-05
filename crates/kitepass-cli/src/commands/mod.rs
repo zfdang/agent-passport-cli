@@ -1,7 +1,7 @@
-pub mod agent_passport;
 pub mod audit;
 pub mod login;
 pub mod operations;
+pub mod passport;
 pub mod passport_policy;
 pub mod profile;
 pub mod sign;
@@ -27,7 +27,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login => login::run(&runtime).await,
         Command::Wallet { action } => wallet::run(action, &runtime).await,
-        Command::Passport { action } => agent_passport::run(action, &runtime).await,
+        Command::Passport { action } => passport::run(action, &runtime).await,
         Command::PassportPolicy { action } => passport_policy::run(action, &runtime).await,
         Command::Profile { action } => profile::run(action, &runtime).await,
         Command::Sign {

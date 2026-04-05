@@ -5,9 +5,9 @@ use kitepass_api_client::{
     AgentProof, CreateSessionChallengeRequest, CreateSessionRequest, PassportClient, SignRequest,
     SigningMode, ValidateAgentProof, ValidateSignIntentRequest,
 };
-use kitepass_config::{env_agent_token, AgentRegistry};
+use kitepass_config::{env_passport_token, AgentRegistry, PASSPORT_TOKEN_ENV};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::AgentPassportToken;
+use kitepass_crypto::encryption::PassportToken;
 use serde::Serialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -28,7 +28,7 @@ pub struct SignArgs {
 struct CanonicalSignIntent<'a> {
     request_id: &'a str,
     resolved_wallet_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     chain_id: &'a str,
     signing_type: &'a str,
     payload: &'a str,
@@ -40,7 +40,7 @@ struct CanonicalSignIntent<'a> {
 
 struct CanonicalValidateIntent<'a> {
     request_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     wallet_id: Option<&'a str>,
     wallet_selector: Option<&'a str>,
     chain_id: &'a str,
@@ -52,7 +52,7 @@ struct CanonicalValidateIntent<'a> {
 
 struct CanonicalSessionCreate<'a> {
     request_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     challenge_id: &'a str,
     challenge_nonce: &'a str,
 }
@@ -65,7 +65,7 @@ struct CanonicalAgentIntent<'a> {
     intent_version: u32,
     request_id: &'a str,
     wallet_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     chain_id: &'a str,
     signing_type: &'a str,
     payload_hash: &'a str,
@@ -82,7 +82,7 @@ struct CanonicalValidateProof<'a> {
     #[serde(rename = "version")]
     intent_version: u32,
     request_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     wallet_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,7 +101,7 @@ struct CanonicalSessionCreateProof<'a> {
     #[serde(rename = "version")]
     intent_version: u32,
     request_id: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     challenge_id: &'a str,
     challenge_nonce: &'a str,
 }
@@ -116,7 +116,7 @@ fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Result<Vec<u8>> 
         intent_version: 1,
         request_id: intent.request_id,
         wallet_id: intent.resolved_wallet_id,
-        agent_passport_id: intent.agent_passport_id,
+        passport_id: intent.passport_id,
         chain_id: intent.chain_id,
         signing_type: intent.signing_type,
         payload_hash: &payload_hash,
@@ -138,7 +138,7 @@ fn canonical_validate_message(intent: &CanonicalValidateIntent<'_>) -> Result<Ve
         intent_type: "validate_sign_intent",
         intent_version: 1,
         request_id: intent.request_id,
-        agent_passport_id: intent.agent_passport_id,
+        passport_id: intent.passport_id,
         wallet_id: intent.wallet_id,
         wallet_selector: intent.wallet_selector,
         chain_id: intent.chain_id,
@@ -156,7 +156,7 @@ fn canonical_session_create_message(intent: &CanonicalSessionCreate<'_>) -> Resu
         intent_type: "create_session",
         intent_version: 1,
         request_id: intent.request_id,
-        agent_passport_id: intent.agent_passport_id,
+        passport_id: intent.passport_id,
         challenge_id: intent.challenge_id,
         challenge_nonce: intent.challenge_nonce,
     };
@@ -171,54 +171,56 @@ fn sign_hex(agent_key: &AgentKey, message: &[u8]) -> String {
 }
 
 struct ResolvedSigner {
-    agent_passport_id: String,
+    passport_id: String,
     profile_name: String,
     agent_key: AgentKey,
 }
 
-fn resolve_validate_agent_passport_id(
-    cli_agent_passport_id: Option<String>,
+fn resolve_validate_passport_id(
+    cli_passport_id: Option<String>,
     registry: &AgentRegistry,
 ) -> Result<String> {
-    if let Some(agent_passport_id) = cli_agent_passport_id {
-        return Ok(agent_passport_id);
+    if let Some(passport_id) = cli_passport_id {
+        return Ok(passport_id);
     }
 
-    if let Some(token_str) = env_agent_token() {
-        let token = AgentPassportToken::parse(&token_str)
-            .context("Failed to parse KITE_AGENT_PASSPORT_TOKEN")?;
-        return Ok(token.agent_passport_id);
+    if let Some(token_str) = env_passport_token() {
+        let token = PassportToken::parse(&token_str)
+            .with_context(|| format!("Failed to parse {PASSPORT_TOKEN_ENV}"))?;
+        return Ok(token.passport_id);
     }
 
-    Ok(registry.resolve_active_agent()?.agent_passport_id)
+    Ok(registry.resolve_active_agent()?.passport_id)
 }
 
 fn resolve_signer(
-    cli_agent_passport_id: Option<String>,
+    cli_passport_id: Option<String>,
     registry: &AgentRegistry,
 ) -> Result<ResolvedSigner> {
-    let token_str = env_agent_token().context(
-        "`kitepass sign` requires KITE_AGENT_PASSPORT_TOKEN because local agent keys are stored as encrypted envelopes in `~/.kitepass/agents.toml`.",
-    )?;
-    let token = AgentPassportToken::parse(&token_str)
-        .context("Failed to parse KITE_AGENT_PASSPORT_TOKEN")?;
+    let token_str = env_passport_token().with_context(|| {
+        format!(
+            "`kitepass sign` requires {PASSPORT_TOKEN_ENV} because local agent keys are stored as encrypted envelopes in `~/.kitepass/agents.toml`."
+        )
+    })?;
+    let token = PassportToken::parse(&token_str)
+        .with_context(|| format!("Failed to parse {PASSPORT_TOKEN_ENV}"))?;
 
-    if let Some(agent_passport_id) = cli_agent_passport_id {
-        if agent_passport_id != token.agent_passport_id {
+    if let Some(passport_id) = cli_passport_id {
+        if passport_id != token.passport_id {
             bail!(
-                "`--passport-id` ({agent_passport_id}) does not match the passport embedded in KITE_AGENT_PASSPORT_TOKEN ({})",
-                token.agent_passport_id
+                "`--passport-id` ({passport_id}) does not match the passport embedded in {PASSPORT_TOKEN_ENV} ({})",
+                token.passport_id
             );
         }
     }
 
     let identity = registry
-        .get_by_agent_passport_id(&token.agent_passport_id)
+        .get_by_passport_id(&token.passport_id)
         .cloned()
         .with_context(|| {
             format!(
-                "No local encrypted agent profile found for agent_passport_id `{}`. Recreate it on this machine with `kitepass passport create --name <profile>` or sync `~/.kitepass/agents.toml`.",
-                token.agent_passport_id
+                "No local encrypted agent profile found for passport_id `{}`. Recreate it on this machine with `kitepass passport create --name <profile>` or sync `~/.kitepass/agents.toml`.",
+                token.passport_id
             )
         })?;
 
@@ -227,8 +229,8 @@ fn resolve_signer(
         .decrypt(token.secret_key.as_str())
         .with_context(|| {
             format!(
-                "Failed to decrypt the local agent key for agent_passport_id `{}`. Check that KITE_AGENT_PASSPORT_TOKEN matches the profile created on this machine.",
-                token.agent_passport_id
+                "Failed to decrypt the local agent key for passport_id `{}`. Check that {PASSPORT_TOKEN_ENV} matches the profile created on this machine.",
+                token.passport_id
             )
         })?;
     let pem = std::str::from_utf8(decrypted_pem.as_slice())
@@ -236,7 +238,7 @@ fn resolve_signer(
     let agent_key = AgentKey::from_pem(pem).context("Failed to parse decrypted private key PEM")?;
 
     Ok(ResolvedSigner {
-        agent_passport_id: token.agent_passport_id,
+        passport_id: token.passport_id,
         profile_name: identity.name,
         agent_key,
     })
@@ -269,13 +271,13 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
         // Validate mode: check routing and policy without returning a final signature.
         let request_id = format!("req_{}", Uuid::new_v4().simple());
         let wallet_selector = wallet_selector_for(&args.wallet_id);
-        let result = if env_agent_token().is_some() {
+        let result = if env_passport_token().is_some() {
             let signer = resolve_signer(args.passport_id, &registry)?;
             let proof_signature = sign_hex(
                 &signer.agent_key,
                 &canonical_validate_message(&CanonicalValidateIntent {
                     request_id: &request_id,
-                    agent_passport_id: &signer.agent_passport_id,
+                    passport_id: &signer.passport_id,
                     wallet_id: args.wallet_id.as_deref(),
                     wallet_selector: wallet_selector.as_deref(),
                     chain_id: &args.chain_id,
@@ -290,7 +292,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                     request_id,
                     wallet_id: args.wallet_id,
                     wallet_selector,
-                    agent_passport_id: signer.agent_passport_id,
+                    passport_id: signer.passport_id,
                     chain_id: args.chain_id,
                     signing_type: args.signing_type,
                     payload: args.payload,
@@ -306,14 +308,13 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             let owner_client = PassportClient::new(api_url)
                 .context("Failed to initialize Passport API client")?
                 .with_token(token);
-            let agent_passport_id =
-                resolve_validate_agent_passport_id(args.passport_id, &registry)?;
+            let passport_id = resolve_validate_passport_id(args.passport_id, &registry)?;
             owner_client
                 .validate_sign_intent(&ValidateSignIntentRequest {
                     request_id,
                     wallet_id: args.wallet_id,
                     wallet_selector,
-                    agent_passport_id,
+                    passport_id,
                     chain_id: args.chain_id,
                     signing_type: args.signing_type,
                     payload: args.payload,
@@ -325,7 +326,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 .context("Failed to validate sign intent")?
         } else {
             bail!(
-                "`kitepass sign --validate` requires either KITE_AGENT_PASSPORT_TOKEN or a logged-in principal session in ~/.kitepass/config.toml."
+                "`kitepass sign --validate` requires either KITE_PASSPORT_TOKEN or a logged-in principal session in ~/.kitepass/config.toml."
             );
         };
         runtime.print_data(&result)?;
@@ -339,7 +340,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             runtime.print_data(&json!({
                 "dry_run": true,
                 "action": "sign",
-                "agent_passport_id": resolved_signer.agent_passport_id,
+                "passport_id": resolved_signer.passport_id,
                 "wallet_id": args.wallet_id,
                 "chain_id": args.chain_id,
                 "signing_type": args.signing_type,
@@ -348,7 +349,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 "mode": mode_name,
                 "profile_name": resolved_signer.profile_name,
                 "private_key_storage": "encrypted_inline",
-                "agent_token_env": "KITE_AGENT_PASSPORT_TOKEN",
+                "passport_token_env": PASSPORT_TOKEN_ENV,
             }))?;
             return Ok(());
         }
@@ -359,7 +360,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             &resolved_signer.agent_key,
             &canonical_validate_message(&CanonicalValidateIntent {
                 request_id: &request_id,
-                agent_passport_id: &resolved_signer.agent_passport_id,
+                passport_id: &resolved_signer.passport_id,
                 wallet_id: args.wallet_id.as_deref(),
                 wallet_selector: wallet_selector.as_deref(),
                 chain_id: &args.chain_id,
@@ -374,7 +375,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 request_id: request_id.clone(),
                 wallet_id: args.wallet_id,
                 wallet_selector,
-                agent_passport_id: resolved_signer.agent_passport_id.clone(),
+                passport_id: resolved_signer.passport_id.clone(),
                 chain_id: args.chain_id.clone(),
                 signing_type: args.signing_type.clone(),
                 payload: args.payload.clone(),
@@ -392,20 +393,20 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
         let session_request_id = format!("req_{}", Uuid::new_v4().simple());
         let challenge = client
             .create_session_challenge(&CreateSessionChallengeRequest {
-                agent_passport_id: resolved_signer.agent_passport_id.clone(),
+                passport_id: resolved_signer.passport_id.clone(),
             })
             .await
             .context("Failed to create agent session challenge")?;
         let session = client
             .create_session(&CreateSessionRequest {
-                agent_passport_id: resolved_signer.agent_passport_id.clone(),
+                passport_id: resolved_signer.passport_id.clone(),
                 request_id: Some(session_request_id.clone()),
                 challenge_id: Some(challenge.challenge_id.clone()),
                 proof_signature: Some(sign_hex(
                     &resolved_signer.agent_key,
                     &canonical_session_create_message(&CanonicalSessionCreate {
                         request_id: &session_request_id,
-                        agent_passport_id: &resolved_signer.agent_passport_id,
+                        passport_id: &resolved_signer.passport_id,
                         challenge_id: &challenge.challenge_id,
                         challenge_nonce: &challenge.challenge_nonce,
                     })?,
@@ -419,7 +420,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             &canonical_agent_message(&CanonicalSignIntent {
                 request_id: &request_id,
                 resolved_wallet_id: &validate.resolved_wallet_id,
-                agent_passport_id: &resolved_signer.agent_passport_id,
+                passport_id: &resolved_signer.passport_id,
                 chain_id: &args.chain_id,
                 signing_type: &args.signing_type,
                 payload: &args.payload,
@@ -435,7 +436,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 request_id,
                 idempotency_key,
                 wallet_id: validate.resolved_wallet_id,
-                agent_passport_id: resolved_signer.agent_passport_id.clone(),
+                passport_id: resolved_signer.passport_id.clone(),
                 chain_id: args.chain_id,
                 signing_type: args.signing_type,
                 mode,
@@ -443,7 +444,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 destination: args.destination,
                 value: args.value,
                 agent_proof: AgentProof {
-                    agent_passport_id: resolved_signer.agent_passport_id,
+                    passport_id: resolved_signer.passport_id,
                     session_nonce: session.session_nonce,
                     signature,
                 },
@@ -464,7 +465,7 @@ mod tests {
         let message = canonical_agent_message(&CanonicalSignIntent {
             request_id: "req_123",
             resolved_wallet_id: "wal_123",
-            agent_passport_id: "agp_123",
+            passport_id: "agp_123",
             chain_id: "eip155:8453",
             signing_type: "transaction",
             payload: "0xdeadbeef",

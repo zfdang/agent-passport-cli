@@ -21,12 +21,12 @@ The system now uses two different credential types:
 Passport Token format:
 
 ```text
-kite_apt_<agent_passport_id>__<secret_key>
+kite_passport_<passport_id>__<secret_key>
 ```
 
 The token carries:
 
-- the Passport `agent_passport_id`, which identifies the delegated authority on the Gateway
+- the Passport `passport_id`, which identifies the delegated authority on the Gateway
 - a random secret, which is only used locally to decrypt the stored private-key envelope
 
 The CLI does not store the Passport Token on disk.
@@ -38,7 +38,7 @@ Local agent profiles are stored in `~/.kitepass/agents.toml`:
 ```toml
 [[agents]]
 name = "trading-bot"
-agent_passport_id = "agp_123"
+passport_id = "agp_123"
 public_key_hex = "..."
 encrypted_key = { cipher = "aes-256-gcm", kdf = "hkdf-sha256", salt = "...", nonce = "...", ciphertext = "..." }
 ```
@@ -46,7 +46,7 @@ encrypted_key = { cipher = "aes-256-gcm", kdf = "hkdf-sha256", salt = "...", non
 Each profile contains:
 
 - a human-friendly local profile name
-- the remote `agent_passport_id`
+- the remote `passport_id`
 - the Ed25519 public key for diagnostics
 - an inline `CryptoEnvelope` for the private key
 
@@ -73,8 +73,8 @@ Security properties:
 
 For `kitepass sign`, the runtime flow is:
 
-1. read `KITE_AGENT_PASSPORT_TOKEN`
-2. parse `agent_passport_id` and `secret_key`
+1. read `KITE_PASSPORT_TOKEN`
+2. parse `passport_id` and `secret_key`
 3. load the matching profile from `agents.toml`
 4. decrypt the inline `encrypted_key`
 5. sign the canonical agent intent locally
@@ -82,13 +82,13 @@ For `kitepass sign`, the runtime flow is:
 
 The Gateway only receives:
 
-- `agent_passport_id`
+- `passport_id`
 - sign intent metadata
 - the agent proof signature
 
 It never receives the decrypted private key.
 
-`kitepass sign --validate` is slightly broader: it can run either with `KITE_AGENT_PASSPORT_TOKEN` or with a logged-in principal session. That owner path is intended for debugging and route validation, not as the final runtime signing credential.
+`kitepass sign --validate` is slightly broader: it can run either with `KITE_PASSPORT_TOKEN` or with a logged-in principal session. That owner path is intended for debugging and route validation, not as the final runtime signing credential.
 
 ## CAIP-2 and Multi-Chain Routing
 
@@ -112,10 +112,10 @@ When `wallet_id` is omitted, the CLI sends `wallet_selector=auto` during `Valida
 
 Expected local failure cases include:
 
-- `KITE_AGENT_PASSPORT_TOKEN` is missing
+- `KITE_PASSPORT_TOKEN` is missing
 - the token format is invalid
-- the token `agent_passport_id` does not match the requested key
-- no local encrypted profile exists for the token's `agent_passport_id`
+- the token `passport_id` does not match the requested key
+- no local encrypted profile exists for the token's `passport_id`
 - the supplied token secret cannot decrypt the stored envelope
 
 These failures are deliberate: they prevent the CLI from silently falling back to weaker plaintext-key behavior.

@@ -74,28 +74,28 @@ kitepass --json policy create \
 ```
 
 ```bash
-kitepass --json policy activate --policy-id <policy-id>
+kitepass --json passport-policy activate --passport-policy-id <passport-policy-id>
 ```
 
-### 4.2 Create The Bound Runtime Agent Passport
+### 4.2 Create The Bound Runtime Passport
 
 ```bash
-kitepass --json agent-passport create \
+kitepass --json passport create \
   --name trading-bot \
   --wallet-id <wallet-id> \
-  --policy-id <policy-id>
+  --passport-policy-id <passport-policy-id>
 ```
 
-This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Agent Passport Token:
+This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Passport Token:
 
 ```text
-kite_apt_<agent_passport_id>__<secret_key>
+kite_passport_<passport_id>__<secret_key>
 ```
 
 Important notes:
 
 - the private key is not stored as plaintext PEM
-- the Agent Passport Token is shown only once
+- the Passport Token is shown only once
 - if the token is lost, revoke the key and mint a new one
 - there is no post-creation bind command; create a new bound key instead
 
@@ -123,10 +123,10 @@ kitepass --json profile delete --name trading-bot
 
 ## 6. Signing
 
-Export the Agent Passport Token from the bound runtime key before signing:
+Export the Passport Token from the bound runtime key before signing:
 
 ```bash
-export KITE_AGENT_PASSPORT_TOKEN="kite_apt_<agent_passport_id>__<secret_key>"
+export KITE_PASSPORT_TOKEN="kite_passport_<passport_id>__<secret_key>"
 ```
 
 ### 6.1 Validate Routing And Policy
@@ -145,12 +145,12 @@ kitepass --json sign --validate \
 `kitepass sign --validate` can be used either:
 
 - as an owner-facing diagnostic command after `kitepass login`
-- or as an agent-facing proof flow when `KITE_AGENT_PASSPORT_TOKEN` is present
+- or as an agent-facing proof flow when `KITE_PASSPORT_TOKEN` is present
 
 ### 6.2 Sign Without Broadcasting
 
 ```bash
-KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
+KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" \
   kitepass --json sign \
     --passport-id <passport-id> \
     --wallet-id <wallet-id> \
@@ -164,15 +164,15 @@ KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
 Key behavior:
 
 - `chain_id` uses CAIP-2 notation, such as `eip155:8453`
-- `kitepass sign` requires `KITE_AGENT_PASSPORT_TOKEN`
+- `kitepass sign` requires `KITE_PASSPORT_TOKEN`
 - `kitepass sign` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
-- the CLI parses the embedded `agent_passport_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
+- the CLI parses the embedded `passport_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
 - the Gateway then validates agent proof, policy state, wallet binding, and limits before returning the final signature
 
 ### 6.3 Sign And Broadcast
 
 ```bash
-KITE_AGENT_PASSPORT_TOKEN="$KITE_AGENT_PASSPORT_TOKEN" \
+KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" \
   kitepass --json sign \
     --broadcast \
     --passport-id <passport-id> \
@@ -209,11 +209,11 @@ Kitepass CLI stores state in `~/.kitepass/`:
 
 ## 9. Troubleshooting
 
-- **Missing Agent Passport Token**
-  - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_AGENT_PASSPORT_TOKEN`
+- **Missing Passport Token**
+  - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_PASSPORT_TOKEN`
 - **No local encrypted profile**
   - the agent passport was created on another machine, or `agents.toml` is missing
 - **Policy creation order**
-  - create the policy first, then provision the bound runtime key with `--wallet-id` and `--policy-id`
+  - create the policy first, then provision the bound runtime key with `--wallet-id` and `--passport-policy-id`
 - **Wallet import chain family**
   - use `evm`, `eip155`, or `base`

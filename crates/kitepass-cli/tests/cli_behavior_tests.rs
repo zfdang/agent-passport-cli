@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 use kitepass_config::{AgentIdentity, AgentRegistry, CliConfig};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::{AgentPassportToken, CryptoEnvelope};
+use kitepass_crypto::encryption::{CryptoEnvelope, PassportToken};
 use kitepass_crypto::hpke::{generate_recipient_keypair, IMPORT_ENCRYPTION_SCHEME};
 use predicates::str::contains;
 use std::fs;
@@ -64,24 +64,20 @@ fn write_agents(tempdir: &TempDir, registry: &AgentRegistry) {
     }
 }
 
-fn encrypted_identity_from_key(
-    name: &str,
-    agent_passport_id: &str,
-    key: &AgentKey,
-) -> AgentIdentity {
+fn encrypted_identity_from_key(name: &str, passport_id: &str, key: &AgentKey) -> AgentIdentity {
     let pem = key.export_pem().expect("key should export");
     AgentIdentity {
         name: name.to_string(),
-        agent_passport_id: agent_passport_id.to_string(),
+        passport_id: passport_id.to_string(),
         public_key_hex: key.public_key_hex(),
         encrypted_key: CryptoEnvelope::encrypt(pem.as_bytes(), TEST_COMBINED_SECRET)
             .expect("key should encrypt"),
     }
 }
 
-fn encrypted_identity(name: &str, agent_passport_id: &str) -> AgentIdentity {
+fn encrypted_identity(name: &str, passport_id: &str) -> AgentIdentity {
     let key = AgentKey::generate();
-    encrypted_identity_from_key(name, agent_passport_id, &key)
+    encrypted_identity_from_key(name, passport_id, &key)
 }
 
 fn cli_command(tempdir: &TempDir) -> Command {
@@ -105,7 +101,7 @@ fn wallet_list_requires_login_with_stable_exit_code() {
 }
 
 #[test]
-fn agent_passport_create_dry_run_emits_json_without_writing_keys() {
+fn passport_create_dry_run_emits_json_without_writing_keys() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     write_config(
         &tempdir,
@@ -125,7 +121,7 @@ fn agent_passport_create_dry_run_emits_json_without_writing_keys() {
         .assert()
         .success()
         .stdout(contains("\"dry_run\": true"))
-        .stdout(contains("\"action\": \"agent_passport.create\""))
+        .stdout(contains("\"action\": \"passport.create\""))
         .stdout(contains("\"profile_name\": \"worker-key\""));
 
     assert!(
@@ -135,13 +131,13 @@ fn agent_passport_create_dry_run_emits_json_without_writing_keys() {
 }
 
 #[tokio::test]
-async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile() {
+async fn passport_create_emits_clean_json_and_persists_encrypted_profile() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-passports:prepare"))
+        .and(path("/v1/passports:prepare"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "intent_id": "intent_123",
@@ -163,7 +159,7 @@ async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile()
             "principal_account_id": "pac_dev",
             "intent_id": "intent_123",
             "intent_hash": "hash_123",
-            "operation": "create_agent_passport",
+            "operation": "create_passport",
             "approval_method": "passkey",
             "approved_at": "2026-03-31T00:00:00Z",
             "expires_at": "2026-04-01T00:00:00Z",
@@ -174,10 +170,10 @@ async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile()
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-passports"))
+        .and(path("/v1/passports"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "status": "active",
             "principal_approval_status": "consumed",
             "bindings": []
@@ -189,22 +185,22 @@ async fn agent_passport_create_emits_clean_json_and_persists_encrypted_profile()
         .args(["--json", "passport", "create", "--name", "worker-key"])
         .assert()
         .success()
-        .stdout(contains("\"agent_passport_id\": \"agp_123\""))
-        .stdout(contains("\"agent_passport_token\": \"kite_apt_agp_123__"))
+        .stdout(contains("\"passport_id\": \"agp_123\""))
+        .stdout(contains("\"passport_token\": \"kite_passport_agp_123__"))
         .stderr(contains(
             "IMPORTANT: Save the Passport Token below immediately!",
         ));
 
     assert!(
         !tempdir.path().join(".kitepass").join("keys").exists(),
-        "agent-passport create should no longer persist PEM key files"
+        "passport create should no longer persist PEM key files"
     );
 
     let registry = load_saved_agents(&tempdir);
     assert_eq!(registry.active_profile.as_deref(), Some("worker-key"));
     assert_eq!(registry.agents.len(), 1);
     assert_eq!(registry.agents[0].name, "worker-key");
-    assert_eq!(registry.agents[0].agent_passport_id, "agp_123");
+    assert_eq!(registry.agents[0].passport_id, "agp_123");
     assert_eq!(registry.agents[0].encrypted_key.cipher, "aes-256-gcm");
     assert_eq!(registry.agents[0].encrypted_key.kdf, "hkdf-sha256");
 }
@@ -348,7 +344,7 @@ async fn policy_activate_renders_json_output() {
             "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -446,7 +442,7 @@ async fn sign_validate_mode_renders_json_output() {
             agents: vec![encrypted_identity_from_key("default", "agp_123", &key)],
         },
     );
-    let agent_passport_token = AgentPassportToken::format("agp_123", TEST_COMBINED_SECRET);
+    let passport_token = PassportToken::format("agp_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -468,7 +464,7 @@ async fn sign_validate_mode_renders_json_output() {
         .await;
 
     cli_command(&tempdir)
-        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
+        .env("KITE_PASSPORT_TOKEN", &passport_token)
         .args([
             "--json",
             "sign",
@@ -502,7 +498,7 @@ async fn sign_validate_mode_renders_json_output() {
     let validate_body: serde_json::Value =
         serde_json::from_slice(&validate_req.body).expect("validate body should be json");
 
-    assert_eq!(validate_body["agent_passport_id"], "agp_123");
+    assert_eq!(validate_body["passport_id"], "agp_123");
     assert!(validate_body["agent_proof"]["signature"]
         .as_str()
         .expect("validate proof should be a string")
@@ -510,7 +506,7 @@ async fn sign_validate_mode_renders_json_output() {
 }
 
 #[test]
-fn sign_requires_agent_passport_token() {
+fn sign_requires_passport_token() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
 
     cli_command(&tempdir)
@@ -523,7 +519,7 @@ fn sign_requires_agent_passport_token() {
         ])
         .assert()
         .failure()
-        .stderr(contains("requires KITE_AGENT_PASSPORT_TOKEN"));
+        .stderr(contains("requires KITE_PASSPORT_TOKEN"));
 }
 
 #[tokio::test]
@@ -543,7 +539,7 @@ async fn audit_list_renders_json_output_for_wallet_filter() {
                 "trace_id": "trace_123",
                 "request_id": "req_123",
                 "wallet_id": "wal_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "chain_id": "eip155:8453",
                 "payload_hash": "0xhash",
                 "outcome": "success",
@@ -567,16 +563,16 @@ async fn audit_list_renders_json_output_for_wallet_filter() {
 }
 
 #[tokio::test]
-async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
+async fn passport_get_renders_json_output_with_bindings_and_usage() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports/agp_123"))
+        .and(path("/v1/passports/agp_123"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
@@ -589,12 +585,12 @@ async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
         .mount(&mock_server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports/agp_123/bindings"))
+        .and(path("/v1/passports/agp_123/bindings"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "bindings": [{
                 "binding_id": "bind_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "wallet_id": "wal_123",
                 "passport_policy_id": "pol_123",
                 "passport_policy_version": 1,
@@ -606,7 +602,7 @@ async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
         .mount(&mock_server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports/agp_123/usage"))
+        .and(path("/v1/passports/agp_123/usage"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "usage": {
@@ -614,7 +610,7 @@ async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
                 "passport_policy_id": "pol_123",
                 "passport_policy_version": 1,
                 "wallet_id": "wal_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "lifetime_spent": "50",
                 "daily_window_started_at": "2026-03-31T00:00:00Z",
                 "daily_spent": "10",
@@ -631,22 +627,22 @@ async fn agent_passport_get_renders_json_output_with_bindings_and_usage() {
         .args(["--json", "passport", "get", "--passport-id", "agp_123"])
         .assert()
         .success()
-        .stdout(contains("\"agent_passport_id\": \"agp_123\""))
+        .stdout(contains("\"passport_id\": \"agp_123\""))
         .stdout(contains("\"binding_id\": \"bind_123\""))
         .stdout(contains("\"daily_spent\": \"10\""));
 }
 
 #[tokio::test]
-async fn agent_passport_freeze_and_revoke_render_json_output() {
+async fn passport_freeze_and_revoke_render_json_output() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
 
     Mock::given(method("POST"))
-        .and(path("/v1/agent-passports/agp_freeze_123"))
+        .and(path("/v1/passports/agp_freeze_123"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "agent_passport_id": "agp_freeze_123",
+            "passport_id": "agp_freeze_123",
             "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
@@ -659,10 +655,10 @@ async fn agent_passport_freeze_and_revoke_render_json_output() {
         .mount(&mock_server)
         .await;
     Mock::given(method("POST"))
-        .and(path("/v1/agent-passports/agp_revoke_123"))
+        .and(path("/v1/passports/agp_revoke_123"))
         .and(header("authorization", "Bearer principal-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "agent_passport_id": "agp_revoke_123",
+            "passport_id": "agp_revoke_123",
             "principal_account_id": "pac_dev",
             "public_key": "feedface",
             "key_alg": "ed25519",
@@ -685,7 +681,7 @@ async fn agent_passport_freeze_and_revoke_render_json_output() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"agent_passport_id\": \"agp_freeze_123\""))
+        .stdout(contains("\"passport_id\": \"agp_freeze_123\""))
         .stdout(contains("\"status\": \"frozen\""));
 
     cli_command(&tempdir)
@@ -698,7 +694,7 @@ async fn agent_passport_freeze_and_revoke_render_json_output() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"agent_passport_id\": \"agp_revoke_123\""))
+        .stdout(contains("\"passport_id\": \"agp_revoke_123\""))
         .stdout(contains("\"status\": \"revoked\""));
 }
 
@@ -715,7 +711,7 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
             "passport_policy_id": "pol_create_123",
             "binding_id": "",
             "wallet_id": "wal_123",
-            "agent_passport_id": "",
+            "passport_id": "",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -761,7 +757,7 @@ async fn policy_create_renders_json_output_and_posts_expected_body() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
     assert_eq!(body["wallet_id"], "wal_123");
-    assert!(body.get("agent_passport_id").is_none() || body["agent_passport_id"].is_null());
+    assert!(body.get("passport_id").is_none() || body["passport_id"].is_null());
     assert_eq!(body["allowed_chains"][0], "eip155:8453");
     assert_eq!(body["allowed_actions"][0], "transaction");
     assert_eq!(body["allowed_destinations"][0], "0xabc");
@@ -780,7 +776,7 @@ async fn policy_create_uses_policy_first_payload() {
             "passport_policy_id": "pol_create_456",
             "binding_id": "",
             "wallet_id": "wal_123",
-            "agent_passport_id": "",
+            "passport_id": "",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -825,7 +821,7 @@ async fn policy_create_uses_policy_first_payload() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("policy create body should be json");
     assert_eq!(body["wallet_id"], "wal_123");
-    assert!(body.get("agent_passport_id").is_none());
+    assert!(body.get("passport_id").is_none());
 }
 
 #[tokio::test]
@@ -841,7 +837,7 @@ async fn policy_get_and_deactivate_render_json_output() {
             "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -861,7 +857,7 @@ async fn policy_get_and_deactivate_render_json_output() {
             "passport_policy_id": "pol_123",
             "binding_id": "bind_123",
             "wallet_id": "wal_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "allowed_chains": ["eip155:8453"],
             "allowed_actions": ["transaction"],
             "max_single_amount": "100",
@@ -917,7 +913,7 @@ async fn audit_get_renders_json_output() {
             "trace_id": "trace_123",
             "request_id": "req_123",
             "wallet_id": "wal_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "chain_id": "eip155:8453",
             "payload_hash": "0xhash",
             "outcome": "success",
@@ -1188,7 +1184,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
             agents: vec![encrypted_identity_from_key("default", "agp_123", &key)],
         },
     );
-    let agent_passport_token = AgentPassportToken::format("agp_123", TEST_COMBINED_SECRET);
+    let passport_token = PassportToken::format("agp_123", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1212,7 +1208,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "challenge_nonce": "nonce_challenge_123",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -1222,7 +1218,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "session_nonce": "nonce_123",
             "status": "active",
             "expires_at": "2026-03-31T00:05:00Z"
@@ -1243,7 +1239,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .await;
 
     cli_command(&tempdir)
-        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
+        .env("KITE_PASSPORT_TOKEN", &passport_token)
         .args([
             "--json",
             "sign",
@@ -1299,12 +1295,12 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
     assert_eq!(validate_body["wallet_id"], "wal_123");
-    assert_eq!(challenge_body["agent_passport_id"], "agp_123");
+    assert_eq!(challenge_body["passport_id"], "agp_123");
     assert!(validate_body["agent_proof"]["signature"]
         .as_str()
         .expect("validate proof should be a string")
         .starts_with("0x"));
-    assert_eq!(session_body["agent_passport_id"], "agp_123");
+    assert_eq!(session_body["passport_id"], "agp_123");
     assert!(session_body["request_id"].is_string());
     assert_eq!(session_body["challenge_id"], "sch_123");
     assert!(session_body["proof_signature"]
@@ -1313,7 +1309,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .starts_with("0x"));
     assert_eq!(sign_body["wallet_id"], "wal_123");
     assert_eq!(sign_body["mode"], "sign_and_submit");
-    assert_eq!(sign_body["agent_proof"]["agent_passport_id"], "agp_123");
+    assert_eq!(sign_body["agent_proof"]["passport_id"], "agp_123");
     assert_eq!(sign_body["agent_proof"]["session_nonce"], "nonce_123");
     assert!(sign_body["agent_proof"]["signature"]
         .as_str()
@@ -1385,7 +1381,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
             ],
         },
     );
-    let agent_passport_token = AgentPassportToken::format("agp_bot", TEST_COMBINED_SECRET);
+    let passport_token = PassportToken::format("agp_bot", TEST_COMBINED_SECRET);
 
     Mock::given(method("POST"))
         .and(path("/v1/sign-intents/validate"))
@@ -1409,7 +1405,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_profile",
-            "agent_passport_id": "agp_bot",
+            "passport_id": "agp_bot",
             "challenge_nonce": "nonce_profile_challenge",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -1419,7 +1415,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_profile",
-            "agent_passport_id": "agp_bot",
+            "passport_id": "agp_bot",
             "session_nonce": "nonce_profile",
             "status": "active",
             "expires_at": "2026-03-31T00:05:00Z"
@@ -1441,7 +1437,7 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
 
     cli_command(&tempdir)
         .env("KITE_PROFILE", "default")
-        .env("KITE_AGENT_PASSPORT_TOKEN", &agent_passport_token)
+        .env("KITE_PASSPORT_TOKEN", &passport_token)
         .args([
             "--json",
             "sign",
@@ -1488,8 +1484,8 @@ async fn sign_uses_token_bound_profile_when_flags_are_omitted() {
     let sign_body: serde_json::Value =
         serde_json::from_slice(&sign_req.body).expect("sign body should be json");
 
-    assert_eq!(challenge_body["agent_passport_id"], "agp_bot");
-    assert_eq!(session_body["agent_passport_id"], "agp_bot");
+    assert_eq!(challenge_body["passport_id"], "agp_bot");
+    assert_eq!(session_body["passport_id"], "agp_bot");
     assert_eq!(session_body["challenge_id"], "sch_profile");
-    assert_eq!(sign_body["agent_passport_id"], "agp_bot");
+    assert_eq!(sign_body["passport_id"], "agp_bot");
 }

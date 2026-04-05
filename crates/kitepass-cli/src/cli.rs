@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(
     name = "kitepass",
-    about = "Kite Agent Passport CLI",
+    about = "Kitepass CLI",
     version = crate::version::DISPLAY_VERSION,
     propagate_version = true
 )]
@@ -75,7 +75,7 @@ pub enum Command {
         #[arg(long, default_value_t = false, conflicts_with = "validate")]
         broadcast: bool,
 
-        /// Explicit Passport id; must match `KITE_AGENT_PASSPORT_TOKEN` when provided
+        /// Explicit Passport id; must match `KITE_PASSPORT_TOKEN` when provided
         #[arg(long)]
         passport_id: Option<String>,
         /// Explicit wallet id; omit to allow auto routing by chain

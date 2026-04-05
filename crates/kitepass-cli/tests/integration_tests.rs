@@ -222,10 +222,10 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports"))
+        .and(path("/v1/passports"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "agent_passports": [{
-                "agent_passport_id": "agp_123",
+            "passports": [{
+                "passport_id": "agp_123",
                 "principal_account_id": "pac_dev",
                 "public_key": "abcd",
                 "key_alg": "ed25519",
@@ -240,11 +240,11 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports/agp_123/bindings"))
+        .and(path("/v1/passports/agp_123/bindings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "bindings": [{
                 "binding_id": "bind_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "wallet_id": "wal_123",
                 "passport_policy_id": "pol_123",
                 "passport_policy_version": 1,
@@ -257,14 +257,14 @@ async fn test_owner_query_surfaces() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/agent-passports/agp_123/usage"))
+        .and(path("/v1/passports/agp_123/usage"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "usage": {
                 "binding_id": "bind_123",
                 "passport_policy_id": "pol_123",
                 "passport_policy_version": 1,
                 "wallet_id": "wal_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "lifetime_spent": "10",
                 "daily_window_started_at": "2026-03-29T00:00:00Z",
                 "daily_spent": "5",
@@ -284,7 +284,7 @@ async fn test_owner_query_surfaces() {
                 "passport_policy_id": "pol_123",
                 "binding_id": "bind_123",
                 "wallet_id": "wal_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "allowed_chains": ["eip155:8453"],
                 "allowed_actions": ["transaction"],
                 "max_single_amount": "100",
@@ -308,7 +308,7 @@ async fn test_owner_query_surfaces() {
                 "trace_id": "trace_123",
                 "request_id": "req_123",
                 "wallet_id": "wal_123",
-                "agent_passport_id": "agp_123",
+                "passport_id": "agp_123",
                 "chain_id": "eip155:8453",
                 "payload_hash": "0xdeadbeef",
                 "outcome": "success",
@@ -358,19 +358,15 @@ async fn test_owner_query_surfaces() {
     assert_eq!(wallets.len(), 1);
     assert_eq!(wallets[0].wallet_id, "wal_123");
 
-    let agent_passports = client.list_agent_passports().await.unwrap();
-    assert_eq!(agent_passports.len(), 1);
-    assert_eq!(agent_passports[0].agent_passport_id, "agp_123");
+    let passports = client.list_passports().await.unwrap();
+    assert_eq!(passports.len(), 1);
+    assert_eq!(passports[0].passport_id, "agp_123");
 
     let bindings = client.list_bindings("agp_123").await.unwrap();
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].passport_policy_id, "pol_123");
 
-    let usage = client
-        .get_agent_passport_usage("agp_123")
-        .await
-        .unwrap()
-        .unwrap();
+    let usage = client.get_passport_usage("agp_123").await.unwrap().unwrap();
     assert_eq!(usage.daily_spent, "5");
 
     let policies = client.list_policies().await.unwrap();
@@ -396,7 +392,7 @@ async fn test_agent_signing_surfaces() {
         .and(path("/v1/sessions/challenge"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "challenge_id": "sch_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "challenge_nonce": "nonce_challenge_123",
             "expires_at": "2026-03-31T00:05:00Z"
         })))
@@ -407,7 +403,7 @@ async fn test_agent_signing_surfaces() {
         .and(path("/v1/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "session_id": "sess_123",
-            "agent_passport_id": "agp_123",
+            "passport_id": "agp_123",
             "session_nonce": "nonce_123",
             "status": "active",
             "expires_at": "2026-03-29T00:05:00Z"
@@ -450,13 +446,13 @@ async fn test_agent_signing_surfaces() {
     let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
     let _challenge = client
         .create_session_challenge(&CreateSessionChallengeRequest {
-            agent_passport_id: "agp_123".to_string(),
+            passport_id: "agp_123".to_string(),
         })
         .await
         .unwrap();
     let session = client
         .create_session(&CreateSessionRequest {
-            agent_passport_id: "agp_123".to_string(),
+            passport_id: "agp_123".to_string(),
             request_id: Some("req_session_123".to_string()),
             challenge_id: Some("sch_123".to_string()),
             proof_signature: Some("0xproof".to_string()),
@@ -470,7 +466,7 @@ async fn test_agent_signing_surfaces() {
             request_id: "req_123".to_string(),
             wallet_id: None,
             wallet_selector: Some("auto".to_string()),
-            agent_passport_id: "agp_123".to_string(),
+            passport_id: "agp_123".to_string(),
             chain_id: "eip155:8453".to_string(),
             signing_type: "transaction".to_string(),
             payload: "0xdeadbeef".to_string(),
@@ -490,7 +486,7 @@ async fn test_agent_signing_surfaces() {
             request_id: "req_123".to_string(),
             idempotency_key: "idem_123".to_string(),
             wallet_id: "wal_123".to_string(),
-            agent_passport_id: "agp_123".to_string(),
+            passport_id: "agp_123".to_string(),
             chain_id: "eip155:8453".to_string(),
             signing_type: "transaction".to_string(),
             mode: SigningMode::SignatureOnly,
@@ -498,7 +494,7 @@ async fn test_agent_signing_surfaces() {
             destination: "0xabc".to_string(),
             value: "10".to_string(),
             agent_proof: AgentProof {
-                agent_passport_id: "agp_123".to_string(),
+                passport_id: "agp_123".to_string(),
                 session_nonce: "nonce_123".to_string(),
                 signature: "0xagentsig".to_string(),
             },

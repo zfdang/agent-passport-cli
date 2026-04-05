@@ -7,24 +7,23 @@ use crate::{
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use kitepass_api_client::{
-    BindingInput, BindingResult, FinalizeAgentPassportRequest, PassportClient,
-    RegisterAgentPassportRequest,
+    BindingInput, BindingResult, FinalizePassportRequest, PassportClient, RegisterPassportRequest,
 };
 use kitepass_config::{AgentIdentity, DEFAULT_AGENT_PROFILE};
 use kitepass_crypto::agent_key::AgentKey;
-use kitepass_crypto::encryption::{generate_secret_key, AgentPassportToken, CryptoEnvelope};
+use kitepass_crypto::encryption::{generate_secret_key, CryptoEnvelope, PassportToken};
 use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 #[derive(Serialize)]
-struct AgentPassportCreateOutput<'a> {
+struct PassportCreateOutput<'a> {
     profile_name: &'a str,
-    agent_passport_id: &'a str,
+    passport_id: &'a str,
     status: &'a str,
     public_key: &'a str,
-    agent_passport_token: &'a str,
+    passport_token: &'a str,
     bindings: &'a [BindingResult],
     activated: bool,
 }
@@ -43,11 +42,11 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
 
     match action {
         PassportAction::List => {
-            let agent_passports = client
-                .list_agent_passports()
+            let passports = client
+                .list_passports()
                 .await
-                .context("Failed to list agent passports")?;
-            runtime.print_data(&agent_passports)?;
+                .context("Failed to list passports")?;
+            runtime.print_data(&passports)?;
         }
         PassportAction::Create {
             name,
@@ -62,7 +61,7 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "agent_passport.create",
+                    "action": "passport.create",
                     "profile_name": profile_name,
                     "wallet_id": wallet_id,
                     "passport_policy_id": passport_policy_id,
@@ -86,7 +85,7 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             let key = AgentKey::generate();
             let pubkey_hex = key.public_key_hex();
 
-            // 2. Generate a secret key for the Agent Passport Token and encrypt the private key
+            // 2. Generate a secret key for the Passport Token and encrypt the private key
             let secret_key = generate_secret_key();
             let pem = key
                 .export_pem()
@@ -117,7 +116,7 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                     );
                 }
             };
-            let request = RegisterAgentPassportRequest {
+            let request = RegisterPassportRequest {
                 public_key: pubkey_hex.clone(),
                 key_address: format!("ed25519:{}", &pubkey_hex[..16]),
                 expires_at: (Utc::now() + Duration::days(365)).to_rfc3339(),
@@ -125,9 +124,9 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
             };
             let prepared = client
-                .register_agent_passport(&request)
+                .register_passport(&request)
                 .await
-                .context("Failed to prepare agent passport provisioning")?;
+                .context("Failed to prepare passport provisioning")?;
             runtime.progress(format!(
                 "Prepared provisioning intent: {}",
                 prepared.intent_id
@@ -137,18 +136,18 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to approve provisioning intent")?;
             let res = client
-                .finalize_agent_passport(&FinalizeAgentPassportRequest {
+                .finalize_passport(&FinalizePassportRequest {
                     intent_id: prepared.intent_id.clone(),
                     principal_approval_id: approval.principal_approval_id.clone(),
                     idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
                 })
                 .await
-                .context("Failed to finalize agent passport provisioning")?;
+                .context("Failed to finalize passport provisioning")?;
 
             // 4. Persist agent profile with encrypted key inline
             registry.upsert(AgentIdentity {
                 name: profile_name.clone(),
-                agent_passport_id: res.agent_passport_id.clone(),
+                passport_id: res.passport_id.clone(),
                 public_key_hex: pubkey_hex.clone(),
                 encrypted_key,
             })?;
@@ -172,11 +171,9 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 ));
             }
 
-            // 5. Build and display the Agent Passport Token
-            let agent_passport_token = Zeroizing::new(AgentPassportToken::format(
-                &res.agent_passport_id,
-                &secret_key,
-            ));
+            // 5. Build and display the Passport Token
+            let passport_token =
+                Zeroizing::new(PassportToken::format(&res.passport_id, &secret_key));
 
             // Keep the owner config on disk for API/base settings only.
             if let Err(error) = config.save_default() {
@@ -189,12 +186,12 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             runtime.important("║  If lost, revoke this key and create a new one.          ║");
             runtime.important("╚══════════════════════════════════════════════════════════╝");
 
-            runtime.print_data(&AgentPassportCreateOutput {
+            runtime.print_data(&PassportCreateOutput {
                 profile_name: &profile_name,
-                agent_passport_id: &res.agent_passport_id,
+                passport_id: &res.passport_id,
                 status: &res.status,
                 public_key: &pubkey_hex,
-                agent_passport_token: agent_passport_token.as_str(),
+                passport_token: passport_token.as_str(),
                 bindings: &res.bindings,
                 activated: !no_activate,
             })?;
@@ -207,8 +204,8 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             }
         }
         PassportAction::Get { passport_id } => {
-            let agent_passport = client
-                .get_agent_passport(&passport_id)
+            let passport = client
+                .get_passport(&passport_id)
                 .await
                 .with_context(|| format!("Failed to get passport {passport_id}"))?;
             let bindings = client
@@ -216,11 +213,11 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .with_context(|| format!("Failed to list bindings for passport {passport_id}"))?;
             let usage = client
-                .get_agent_passport_usage(&passport_id)
+                .get_passport_usage(&passport_id)
                 .await
                 .with_context(|| format!("Failed to get usage for passport {passport_id}"))?;
             runtime.print_data(&serde_json::json!({
-                "agent_passport": agent_passport,
+                "passport": passport,
                 "bindings": bindings,
                 "usage": usage,
             }))?;
@@ -230,32 +227,32 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "agent_passport.freeze",
-                    "agent_passport_id": key_id,
+                    "action": "passport.freeze",
+                    "passport_id": key_id,
                 }))?;
                 return Ok(());
             }
-            let agent_passport = client
-                .freeze_agent_passport(&key_id)
+            let passport = client
+                .freeze_passport(&key_id)
                 .await
-                .with_context(|| format!("Failed to freeze agent passport {key_id}"))?;
-            runtime.print_data(&agent_passport)?;
+                .with_context(|| format!("Failed to freeze passport {key_id}"))?;
+            runtime.print_data(&passport)?;
         }
         PassportAction::Revoke { passport_id } => {
             let key_id = passport_id;
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
-                    "action": "agent_passport.revoke",
-                    "agent_passport_id": key_id,
+                    "action": "passport.revoke",
+                    "passport_id": key_id,
                 }))?;
                 return Ok(());
             }
-            let agent_passport = client
-                .revoke_agent_passport(&key_id)
+            let passport = client
+                .revoke_passport(&key_id)
                 .await
-                .with_context(|| format!("Failed to revoke agent passport {key_id}"))?;
-            runtime.print_data(&agent_passport)?;
+                .with_context(|| format!("Failed to revoke passport {key_id}"))?;
+            runtime.print_data(&passport)?;
         }
     }
     Ok(())
@@ -266,7 +263,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // ── AgentPassportCreateOutput serialization ─────────────────
+    // ── PassportCreateOutput serialization ──────────────────────
 
     fn sample_binding() -> BindingResult {
         BindingResult {
@@ -281,21 +278,21 @@ mod tests {
     #[test]
     fn create_output_serializes_all_fields() {
         let bindings = vec![sample_binding()];
-        let output = AgentPassportCreateOutput {
+        let output = PassportCreateOutput {
             profile_name: "my-agent",
-            agent_passport_id: "agp_12345",
+            passport_id: "agp_12345",
             status: "active",
             public_key: "deadbeef01234567",
-            agent_passport_token: "kite_apt_agp_12345__secret",
+            passport_token: "kite_passport_agp_12345__secret",
             bindings: &bindings,
             activated: true,
         };
         let value = serde_json::to_value(&output).expect("should serialize");
         assert_eq!(value["profile_name"], "my-agent");
-        assert_eq!(value["agent_passport_id"], "agp_12345");
+        assert_eq!(value["passport_id"], "agp_12345");
         assert_eq!(value["status"], "active");
         assert_eq!(value["public_key"], "deadbeef01234567");
-        assert_eq!(value["agent_passport_token"], "kite_apt_agp_12345__secret");
+        assert_eq!(value["passport_token"], "kite_passport_agp_12345__secret");
         assert_eq!(value["activated"], true);
         assert_eq!(value["bindings"][0]["binding_id"], "bnd_001");
         assert_eq!(value["bindings"][0]["wallet_id"], "wal_abc");
@@ -306,12 +303,12 @@ mod tests {
 
     #[test]
     fn create_output_with_empty_bindings() {
-        let output = AgentPassportCreateOutput {
+        let output = PassportCreateOutput {
             profile_name: "default",
-            agent_passport_id: "agp_000",
+            passport_id: "agp_000",
             status: "pending",
             public_key: "aabbccdd",
-            agent_passport_token: "kite_apt_agp_000__sk",
+            passport_token: "kite_passport_agp_000__sk",
             bindings: &[],
             activated: false,
         };
@@ -347,14 +344,14 @@ mod tests {
 
         let output = json!({
             "dry_run": true,
-            "action": "agent_passport.create",
+            "action": "passport.create",
             "profile_name": profile_name,
             "wallet_id": wallet_id,
             "passport_policy_id": passport_policy_id,
         });
 
         assert_eq!(output["dry_run"], true);
-        assert_eq!(output["action"], "agent_passport.create");
+        assert_eq!(output["action"], "passport.create");
         assert_eq!(output["profile_name"], "test-profile");
         assert_eq!(output["wallet_id"], "wal_abc");
         assert_eq!(output["passport_policy_id"], "pp_xyz");
@@ -368,7 +365,7 @@ mod tests {
 
         let output = json!({
             "dry_run": true,
-            "action": "agent_passport.create",
+            "action": "passport.create",
             "profile_name": profile_name,
             "wallet_id": wallet_id,
             "passport_policy_id": passport_policy_id,
@@ -384,13 +381,13 @@ mod tests {
         let key_id = "agp_freeze_me".to_string();
         let output = json!({
             "dry_run": true,
-            "action": "agent_passport.freeze",
-            "agent_passport_id": key_id,
+            "action": "passport.freeze",
+            "passport_id": key_id,
         });
 
         assert_eq!(output["dry_run"], true);
-        assert_eq!(output["action"], "agent_passport.freeze");
-        assert_eq!(output["agent_passport_id"], "agp_freeze_me");
+        assert_eq!(output["action"], "passport.freeze");
+        assert_eq!(output["passport_id"], "agp_freeze_me");
     }
 
     #[test]
@@ -398,13 +395,13 @@ mod tests {
         let key_id = "agp_revoke_me".to_string();
         let output = json!({
             "dry_run": true,
-            "action": "agent_passport.revoke",
-            "agent_passport_id": key_id,
+            "action": "passport.revoke",
+            "passport_id": key_id,
         });
 
         assert_eq!(output["dry_run"], true);
-        assert_eq!(output["action"], "agent_passport.revoke");
-        assert_eq!(output["agent_passport_id"], "agp_revoke_me");
+        assert_eq!(output["action"], "passport.revoke");
+        assert_eq!(output["passport_id"], "agp_revoke_me");
     }
 
     // ── Idempotency key format ──────────────────────────────────

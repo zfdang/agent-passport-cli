@@ -1,16 +1,16 @@
 use crate::error::ApiError;
 use crate::types::{
-    AgentPassport, AgentPassportListResponse, AgentPassportMutationRequest, AgentSession,
-    AuditEvent, AuditEventListResponse, AuthPollRequest, AuthPollResponse, BindingListResponse,
-    ChainFamily, CreatePassportPolicyRequest, CreateSessionChallengeRequest,
+    AgentSession, AuditEvent, AuditEventListResponse, AuthPollRequest, AuthPollResponse,
+    BindingListResponse, ChainFamily, CreatePassportPolicyRequest, CreateSessionChallengeRequest,
     CreateSessionChallengeResponse, CreateSessionRequest, DeviceCodeRequest, DeviceCodeResponse,
-    FinalizeAgentPassportRequest, ImportAttestationResponse, ImportSessionRequest,
-    ImportSessionResponse, Operation, PassportPolicy, PassportPolicyUsageState, PolicyListResponse,
-    PrepareAgentPassportResponse, PrincipalApprovalRecord, ProvisioningIntentStatusResponse,
-    RegisterAgentPassportRequest, RegisterAgentPassportResponse, SignRequest, SignResponse,
-    UploadWalletCiphertextRequest, UploadWalletCiphertextResponse, UsageResponse,
-    ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse, Wallet,
-    WalletAgentPassportBinding, WalletListResponse, WalletMutationRequest,
+    FinalizePassportRequest, ImportAttestationResponse, ImportSessionRequest,
+    ImportSessionResponse, Operation, Passport, PassportListResponse, PassportMutationRequest,
+    PassportPolicy, PassportPolicyUsageState, PolicyListResponse, PreparePassportResponse,
+    PrincipalApprovalRecord, ProvisioningIntentStatusResponse, RegisterPassportRequest,
+    RegisterPassportResponse, SignRequest, SignResponse, UploadWalletCiphertextRequest,
+    UploadWalletCiphertextResponse, UsageResponse, ValidateSignIntentRequest,
+    ValidateSignIntentResponse, VerifyAuditResponse, Wallet, WalletListResponse,
+    WalletMutationRequest, WalletPassportBinding,
 };
 
 /// HTTP client for the Passport API.
@@ -125,11 +125,11 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn register_agent_passport(
+    pub async fn register_passport(
         &self,
-        req_body: &RegisterAgentPassportRequest,
-    ) -> Result<PrepareAgentPassportResponse, ApiError> {
-        let url = format!("{}/v1/agent-passports:prepare", self.base_url);
+        req_body: &RegisterPassportRequest,
+    ) -> Result<PreparePassportResponse, ApiError> {
+        let url = format!("{}/v1/passports:prepare", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
@@ -158,11 +158,11 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn finalize_agent_passport(
+    pub async fn finalize_passport(
         &self,
-        req_body: &FinalizeAgentPassportRequest,
-    ) -> Result<RegisterAgentPassportResponse, ApiError> {
-        let url = format!("{}/v1/agent-passports", self.base_url);
+        req_body: &FinalizePassportRequest,
+    ) -> Result<RegisterPassportResponse, ApiError> {
+        let url = format!("{}/v1/passports", self.base_url);
         let req = self.maybe_auth(self.http.post(&url));
         let res = req.json(req_body).send().await?;
         Self::handle_res(res).await
@@ -196,72 +196,51 @@ impl PassportClient {
         Self::handle_res(res).await
     }
 
-    pub async fn list_agent_passports(&self) -> Result<Vec<AgentPassport>, ApiError> {
-        let url = format!("{}/v1/agent-passports", self.base_url);
+    pub async fn list_passports(&self) -> Result<Vec<Passport>, ApiError> {
+        let url = format!("{}/v1/passports", self.base_url);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
-        Ok(Self::handle_res::<AgentPassportListResponse>(res)
+        Ok(Self::handle_res::<PassportListResponse>(res)
             .await?
-            .agent_passports)
+            .passports)
     }
 
-    pub async fn get_agent_passport(
-        &self,
-        agent_passport_id: &str,
-    ) -> Result<AgentPassport, ApiError> {
-        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
+    pub async fn get_passport(&self, passport_id: &str) -> Result<Passport, ApiError> {
+        let url = format!("{}/v1/passports/{}", self.base_url, passport_id);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn freeze_agent_passport(
-        &self,
-        agent_passport_id: &str,
-    ) -> Result<AgentPassport, ApiError> {
-        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
+    pub async fn freeze_passport(&self, passport_id: &str) -> Result<Passport, ApiError> {
+        let url = format!("{}/v1/passports/{}", self.base_url, passport_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req
-            .json(&AgentPassportMutationRequest::Freeze)
-            .send()
-            .await?;
+        let res = req.json(&PassportMutationRequest::Freeze).send().await?;
         Self::handle_res(res).await
     }
 
-    pub async fn revoke_agent_passport(
-        &self,
-        agent_passport_id: &str,
-    ) -> Result<AgentPassport, ApiError> {
-        let url = format!("{}/v1/agent-passports/{}", self.base_url, agent_passport_id);
+    pub async fn revoke_passport(&self, passport_id: &str) -> Result<Passport, ApiError> {
+        let url = format!("{}/v1/passports/{}", self.base_url, passport_id);
         let req = self.maybe_auth(self.http.post(&url));
-        let res = req
-            .json(&AgentPassportMutationRequest::Revoke)
-            .send()
-            .await?;
+        let res = req.json(&PassportMutationRequest::Revoke).send().await?;
         Self::handle_res(res).await
     }
 
     pub async fn list_bindings(
         &self,
-        agent_passport_id: &str,
-    ) -> Result<Vec<WalletAgentPassportBinding>, ApiError> {
-        let url = format!(
-            "{}/v1/agent-passports/{}/bindings",
-            self.base_url, agent_passport_id
-        );
+        passport_id: &str,
+    ) -> Result<Vec<WalletPassportBinding>, ApiError> {
+        let url = format!("{}/v1/passports/{}/bindings", self.base_url, passport_id);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Ok(Self::handle_res::<BindingListResponse>(res).await?.bindings)
     }
 
-    pub async fn get_agent_passport_usage(
+    pub async fn get_passport_usage(
         &self,
-        agent_passport_id: &str,
+        passport_id: &str,
     ) -> Result<Option<PassportPolicyUsageState>, ApiError> {
-        let url = format!(
-            "{}/v1/agent-passports/{}/usage",
-            self.base_url, agent_passport_id
-        );
+        let url = format!("{}/v1/passports/{}/usage", self.base_url, passport_id);
         let req = self.maybe_auth(self.http.get(&url));
         let res = req.send().await?;
         Ok(Self::handle_res::<UsageResponse>(res).await?.usage)

@@ -58,7 +58,7 @@ pub async fn run(action: PassportPolicyAction, runtime: &Runtime) -> Result<()> 
                 .create_policy(&CreatePassportPolicyRequest {
                     binding_id: None,
                     wallet_id,
-                    agent_passport_id: None,
+                    passport_id: None,
                     allowed_chains,
                     allowed_actions,
                     max_single_amount,
