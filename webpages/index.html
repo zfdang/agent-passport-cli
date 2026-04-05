@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kitepass CLI</title>
+    <meta
+      name="description"
+      content="Kitepass CLI is the developer-facing command line for owner login, wallet import, Agent Passport provisioning, passport policy management, and delegated signing."
+    />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand-lockup" href="#top" aria-label="Kitepass CLI home">
+          <span class="brand-mark">K</span>
+          <span class="brand-copy">
+            <span class="eyebrow">Kite Agent Passport</span>
+            <strong>Kitepass CLI</strong>
+          </span>
+        </a>
+
+        <button
+          class="menu-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="site-nav"
+          data-menu-toggle
+        >
+          Menu
+        </button>
+
+        <nav class="nav-links" id="site-nav" data-site-nav>
+          <a href="#overview">Overview</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#commands">Commands</a>
+          <a href="#security">Security</a>
+          <a href="#resources">Docs</a>
+          <a class="nav-cta" href="#quickstart">Quickstart</a>
+        </nav>
+      </header>
+
+      <main class="page-content" id="top">
+        <section class="hero-grid">
+          <article class="hero-panel surface reveal">
+            <p class="section-eyebrow">Developer CLI</p>
+            <h1>
+              Delegated signing from the terminal.
+            </h1>
+            <p class="hero-copy">
+              Log in as the wallet owner, import keys into an attested TEE signer,
+              provision Agent Passports with Passport Policies, and hand off a
+              one-time Passport Token to the agent runtime &mdash; all from one CLI.
+            </p>
+
+            <div class="chip-row">
+              <span class="chip">Passkey login</span>
+              <span class="chip">TEE wallet import</span>
+              <span class="chip">Agent Passport provisioning</span>
+              <span class="chip">Policy-governed signing</span>
+            </div>
+
+            <div class="hero-actions">
+              <a class="button button-primary" href="#quickstart">Start the flow</a>
+              <a class="button button-secondary" href="https://github.com/zfdang/agent-passport-cli/blob/main/README.md">Open README</a>
+            </div>
+
+            <div class="hero-metrics">
+              <article class="metric-card">
+                <span class="metric-label">Owner plane</span>
+                <strong>Principal Account</strong>
+                <p>Authenticate with passkey, import wallets, mint Agent Passports, manage policy.</p>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Agent plane</span>
+                <strong>Passport Token</strong>
+                <p>One-time runtime credential that unlocks the local encrypted signing key.</p>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Trust boundary</span>
+                <strong>HPKE + Attestation</strong>
+                <p>Wallet secrets are encrypted locally and verified against the signer's attested build.</p>
+              </article>
+            </div>
+          </article>
+
+          <aside class="surface terminal-panel reveal" aria-label="CLI examples">
+            <div class="terminal-header">
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+              <div class="terminal-tabs">
+                <button class="terminal-tab active" type="button" data-example-tab="install">
+                  Install
+                </button>
+                <button class="terminal-tab" type="button" data-example-tab="setup">
+                  Setup
+                </button>
+                <button class="terminal-tab" type="button" data-example-tab="provision">
+                  Provision
+                </button>
+                <button class="terminal-tab" type="button" data-example-tab="sign">
+                  Sign
+                </button>
+              </div>
+            </div>
+
+            <div class="example-panel active" data-example-panel="install">
+              <div class="code-toolbar">
+                <span>Install and verify</span>
+                <button class="copy-button" type="button" data-copy-target="code-install">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-install"><code>curl -fsSL https://cli.kitepass.xyz/install.sh | sh
+kitepass --version</code></pre>
+            </div>
+
+            <div class="example-panel" data-example-panel="setup">
+              <div class="code-toolbar">
+                <span>Owner setup</span>
+                <button class="copy-button" type="button" data-copy-target="code-setup">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-setup"><code>kitepass login
+
+WALLET_JSON="$(printf '<evm-private-key-hex>\n' | kitepass --json wallet import --chain-family evm --name treasury)"
+WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"</code></pre>
+            </div>
+
+            <div class="example-panel" data-example-panel="provision">
+              <div class="code-toolbar">
+                <span>Policy + Agent Passport</span>
+                <button class="copy-button" type="button" data-copy-target="code-provision">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-provision"><code>POLICY_JSON="$(kitepass --json passport-policy create --wallet-id "$WALLET_ID" --allowed-chain eip155:8453 --allowed-action transaction --max-single-amount 100)"
+POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.passport_policy_id')"
+
+PASSPORT_JSON="$(kitepass --json passport create --name trading-bot --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
+PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"</code></pre>
+            </div>
+
+            <div class="example-panel" data-example-panel="sign">
+              <div class="code-toolbar">
+                <span>Runtime signing</span>
+                <button class="copy-button" type="button" data-copy-target="code-sign">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-sign"><code>KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" kitepass --json sign --passport-id "$PASSPORT_ID" --wallet-id "$WALLET_ID" --chain-id eip155:8453 --signing-type transaction --payload 0xdeadbeef --destination 0xabc --value 10</code></pre>
+            </div>
+          </aside>
+        </section>
+
+        <section class="surface overview-panel reveal" id="overview">
+          <div class="section-heading">
+            <p class="section-eyebrow">What it covers</p>
+            <h2>The full delegated-signing path in six capabilities</h2>
+            <p>
+              From passkey login to policy-governed signing, each capability maps
+              directly to a CLI command group.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <span class="feature-kicker">Authentication</span>
+              <h3>Passkey-backed owner login</h3>
+              <p>
+                Start with <code>kitepass login</code>, complete browser approval, and keep the
+                Principal Account session encrypted under <code>~/.kitepass/</code>.
+              </p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-kicker">Wallet custody</span>
+              <h3>Encrypted wallet import</h3>
+              <p>
+                Import EVM keys through an HPKE-based flow that verifies attestation
+                metadata before ciphertext ever leaves the terminal.
+              </p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-kicker">Delegation</span>
+              <h3>Agent Passport provisioning</h3>
+              <p>
+                Generate an agent key locally, register the public key remotely, and
+                receive a one-time Passport Token for runtime use.
+              </p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-kicker">Control plane</span>
+              <h3>Passport Policy lifecycle</h3>
+              <p>
+                Create, activate, inspect, and revoke policy boundaries that define what
+                an Agent Passport can do.
+              </p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-kicker">Runtime</span>
+              <h3>Validation, signing, and broadcast</h3>
+              <p>
+                Validate the route first, sign locally with the decrypted agent key, then
+                optionally broadcast through the relayer.
+              </p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-kicker">Auditability</span>
+              <h3>Operations and audit checks</h3>
+              <p>
+                Inspect operation status, enumerate audit events, and verify the audit
+                chain from the same CLI surface.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="split-grid" id="workflow">
+          <article class="surface workflow-panel reveal">
+            <div class="section-heading">
+              <p class="section-eyebrow">Typical flow</p>
+              <h2>Five steps from install to signed transaction</h2>
+              <p>
+                Each step on the left maps to the matching command block on the right.
+              </p>
+            </div>
+
+            <div class="workflow-list">
+              <article class="workflow-step">
+                <span>01</span>
+                <div>
+                  <h3>Install and verify</h3>
+                  <p>Install Kitepass CLI from <code>cli.kitepass.xyz</code> and confirm the binary is available before touching owner credentials or wallets.</p>
+                </div>
+              </article>
+              <article class="workflow-step">
+                <span>02</span>
+                <div>
+                  <h3>Log in as owner</h3>
+                  <p>Authenticate with passkey and store the Principal Account session locally as an encrypted envelope under <code>~/.kitepass/</code>.</p>
+                </div>
+              </article>
+              <article class="workflow-step">
+                <span>03</span>
+                <div>
+                  <h3>Import wallet and capture <code>WALLET_ID</code></h3>
+                  <p>Verify signer attestation, HPKE-encrypt the wallet secret, and keep the returned wallet identifier for later policy and passport operations.</p>
+                </div>
+              </article>
+              <article class="workflow-step">
+                <span>04</span>
+                <div>
+                  <h3>Create policy, create passport, export token</h3>
+                  <p>Create and activate the Passport Policy, mint the Agent Passport bound to that wallet, and hand off the one-time Passport Token through your runtime secret path.</p>
+                </div>
+              </article>
+              <article class="workflow-step">
+                <span>05</span>
+                <div>
+                  <h3>Sign with Passport Token</h3>
+                  <p>Use the Passport Token plus the stored local encrypted profile to validate, sign, and optionally broadcast the delegated operation.</p>
+                </div>
+              </article>
+            </div>
+          </article>
+
+          <article class="surface quickstart-panel reveal" id="quickstart">
+            <div class="section-heading">
+              <p class="section-eyebrow">Quickstart</p>
+              <h2>Complete delegated-signing path</h2>
+              <p>
+                This is the shortest end-to-end path that still includes owner login,
+                wallet import, policy creation, Agent Passport provisioning, Passport Token
+                export, and the final sign call.
+              </p>
+            </div>
+
+            <div class="code-stack">
+              <div class="code-toolbar">
+                <span>1. Install and verify</span>
+                <button class="copy-button" type="button" data-copy-target="code-quickstart-install">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-quickstart-install"><code>curl -fsSL https://cli.kitepass.xyz/install.sh | sh
+kitepass --version</code></pre>
+            </div>
+
+            <div class="code-stack">
+              <div class="code-toolbar">
+                <span>2. Log in as owner</span>
+                <button class="copy-button" type="button" data-copy-target="code-quickstart-login">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-quickstart-login"><code>kitepass login</code></pre>
+            </div>
+
+            <div class="code-stack">
+              <div class="code-toolbar">
+                <span>3. Import wallet and capture WALLET_ID</span>
+                <button class="copy-button" type="button" data-copy-target="code-quickstart-wallet">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-quickstart-wallet"><code>WALLET_JSON="$(printf '<evm-private-key-hex>\n' | kitepass --json wallet import --chain-family evm --name treasury)"
+WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"
+echo "wallet_id=${WALLET_ID}"</code></pre>
+            </div>
+
+            <div class="code-stack">
+              <div class="code-toolbar">
+                <span>4. Create policy, create passport, export token</span>
+                <button class="copy-button" type="button" data-copy-target="code-quickstart-provision">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-quickstart-provision"><code>POLICY_JSON="$(kitepass --json passport-policy create --wallet-id "$WALLET_ID" --allowed-chain eip155:8453 --allowed-action transaction --max-single-amount 100 --max-daily-amount 1000 --allowed-destination 0xabc --valid-for-hours 24)"
+POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.passport_policy_id')"
+kitepass --json passport-policy activate --passport-policy-id "$POLICY_ID"
+
+PASSPORT_JSON="$(kitepass --json passport create --name trading-bot --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
+PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"
+export KITE_PASSPORT_TOKEN="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_token')"
+
+echo "passport_id=${PASSPORT_ID}"</code></pre>
+            </div>
+
+            <div class="code-stack">
+              <div class="code-toolbar">
+                <span>5. Sign with Passport Token</span>
+                <button class="copy-button" type="button" data-copy-target="code-quickstart-sign">
+                  Copy
+                </button>
+              </div>
+              <pre id="code-quickstart-sign"><code>KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" kitepass --json sign --passport-id "$PASSPORT_ID" --wallet-id "$WALLET_ID" --chain-id eip155:8453 --signing-type transaction --payload 0xdeadbeef --destination 0xabc --value 10</code></pre>
+            </div>
+
+            <p class="quickstart-note">
+              This quickstart uses <code>jq</code> to extract IDs and the one-time Passport Token.
+              Wallet import currently supports the EVM chain family, and signing modes require
+              <code>KITE_PASSPORT_TOKEN</code>.
+            </p>
+          </article>
+        </section>
+
+        <section class="surface command-panel reveal" id="commands">
+          <div class="section-heading">
+            <p class="section-eyebrow">Command surface</p>
+            <h2>Six command groups, one signing flow</h2>
+            <p>
+              Grouped around owner workflows, runtime signing, and operational
+              visibility.
+            </p>
+          </div>
+
+          <div class="command-grid">
+            <article class="command-card">
+              <p class="command-label">Identity</p>
+              <h3>kitepass login</h3>
+              <p>Authenticate the owner via passkey device-code flow and bootstrap the local Principal Account session.</p>
+            </article>
+            <article class="command-card">
+              <p class="command-label">Wallets</p>
+              <h3>wallet import / list / get / freeze / revoke</h3>
+              <p>Import EVM keys into the attested TEE signer and manage wallet lifecycle.</p>
+            </article>
+            <article class="command-card">
+              <p class="command-label">Policies</p>
+              <h3>passport-policy create / activate / deactivate / get</h3>
+              <p>Define chain, amount, and destination boundaries that constrain the delegated signing authority.</p>
+            </article>
+            <article class="command-card">
+              <p class="command-label">Passports</p>
+              <h3>passport create / list / get / freeze / revoke</h3>
+              <p>Provision Agent Passports with bound wallet + policy, and rotate or revoke them.</p>
+            </article>
+            <article class="command-card">
+              <p class="command-label">Profiles</p>
+              <h3>profile list / use / delete</h3>
+              <p>Switch between local encrypted agent profiles without exposing plaintext keys.</p>
+            </article>
+            <article class="command-card">
+              <p class="command-label">Signing + Audit</p>
+              <h3>sign / operations get / audit list / audit verify</h3>
+              <p>Validate routing, sign with the agent key, broadcast via relayer, and verify the audit chain.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="split-grid" id="security">
+          <article class="surface security-panel reveal">
+            <div class="section-heading">
+              <p class="section-eyebrow">Security model</p>
+              <h2>Separate the owner credential from the agent credential</h2>
+              <p>
+                The CLI keeps management-plane credentials and runtime credentials intentionally
+                distinct so an autonomous agent does not inherit full owner authority.
+              </p>
+            </div>
+
+            <div class="security-grid">
+              <article class="security-card">
+                <h3>Principal Account session</h3>
+                <p>
+                  Used for wallet import, Agent Passport provisioning, and Passport Policy changes.
+                  Stored locally as an encrypted envelope plus a local decrypt secret.
+                </p>
+              </article>
+              <article class="security-card">
+                <h3>Local encrypted agent profile</h3>
+                <p>
+                  The agent private key stays on disk only as an inline <code>CryptoEnvelope</code> inside
+                  <code>~/.kitepass/agents.toml</code>.
+                </p>
+              </article>
+              <article class="security-card">
+                <h3>One-time Passport Token</h3>
+                <p>
+                  Contains <code>passport_id</code> plus a secret used only to unlock the local encrypted
+                  profile. The token itself is not stored on disk by the CLI.
+                </p>
+              </article>
+              <article class="security-card">
+                <h3>Attested wallet import</h3>
+                <p>
+                  The CLI checks attestation metadata, measurement profile data, and expected PCRs
+                  before encrypting wallet material for the signer.
+                </p>
+              </article>
+            </div>
+          </article>
+
+          <article class="surface storage-panel reveal">
+            <div class="section-heading">
+              <p class="section-eyebrow">Local state</p>
+              <h2>Know exactly what lands in <code>~/.kitepass/</code></h2>
+            </div>
+
+            <div class="storage-list">
+              <article>
+                <code>config.toml</code>
+                <p>API endpoint settings and the encrypted owner access-token envelope.</p>
+              </article>
+              <article>
+                <code>access-token.secret</code>
+                <p>The local secret used to decrypt the stored Principal Account session.</p>
+              </article>
+              <article>
+                <code>agents.toml</code>
+                <p>Encrypted agent profiles with <code>passport_id</code>, public key metadata, and inline envelopes.</p>
+              </article>
+            </div>
+
+            <div class="note-card">
+              <p class="note-label">Operational guidance</p>
+              <p>
+                Store the Passport Token in a secret manager immediately after creation. If the
+                token is lost, revoke the Agent Passport and mint a new one.
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <section class="surface resources-panel reveal" id="resources">
+          <div class="section-heading">
+            <p class="section-eyebrow">Resources</p>
+            <h2>Jump from the overview into the deeper docs</h2>
+            <p>
+              These are the manuals that back the website copy and the command examples above.
+            </p>
+          </div>
+
+          <div class="resource-grid">
+            <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/README.md">
+              <span class="resource-kicker">Start here</span>
+              <h3>README</h3>
+              <p>Install, end-to-end signing flow, local files, and troubleshooting.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/cli-manual.md">
+              <span class="resource-kicker">Manual</span>
+              <h3>CLI manual</h3>
+              <p>Production-facing commands for login, wallet import, policies, passports, and signing.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/principal-auth-and-agent-passport-flow.md">
+              <span class="resource-kicker">Flow</span>
+              <h3>Principal auth and Agent Passport flow</h3>
+              <p>How the owner credential and runtime credential split across management and execution.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/agent-security-design.md">
+              <span class="resource-kicker">Security</span>
+              <h3>Agent security design</h3>
+              <p>Passport Token format, encrypted profile model, and local signing behavior.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/security-wallet-import.md">
+              <span class="resource-kicker">Custody</span>
+              <h3>Wallet import security</h3>
+              <p>HPKE, attestation discovery, and why wallet plaintext avoids the control plane.</p>
+            </a>
+            <a class="resource-card" href="https://api.kitepass.xyz">
+              <span class="resource-kicker">Endpoint</span>
+              <h3>Default API</h3>
+              <p>The CLI defaults to <code>https://api.kitepass.xyz</code> unless configured otherwise.</p>
+            </a>
+          </div>
+        </section>
+
+        <section class="surface cta-panel reveal">
+          <p class="section-eyebrow">Ready to ship</p>
+          <h2>Browser for approval. Terminal for everything else.</h2>
+          <p>
+            From passkey login to policy-governed signing &mdash; one inspectable path
+            that preserves the Agent Passport trust boundary.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/cli-manual.md">Read the manual</a>
+            <a class="button button-secondary" href="#top">Back to top</a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Kitepass CLI &mdash; Kite Agent Passport</p>
+        <nav class="footer-links">
+          <a href="https://github.com/zfdang/agent-passport-cli">GitHub</a>
+          <a href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/cli-manual.md">Manual</a>
+          <a href="https://api.kitepass.xyz">API</a>
+        </nav>
+      </footer>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
