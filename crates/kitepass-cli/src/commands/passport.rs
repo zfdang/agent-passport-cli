@@ -121,7 +121,7 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             let request = RegisterPassportRequest {
                 public_key: pubkey_hex.clone(),
                 key_address: format!("ed25519:{}", &pubkey_hex[..16]),
-                expires_at: (Utc::now() + Duration::days(365)).to_rfc3339(),
+                expires_at: Utc::now() + Duration::days(365),
                 bindings,
                 idempotency_key: format!("idem_{}", Uuid::new_v4().simple()),
             };

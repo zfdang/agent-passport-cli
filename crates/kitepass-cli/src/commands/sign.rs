@@ -8,9 +8,10 @@ use kitepass_api_client::{
 use kitepass_config::{env_passport_token, LocalPassportRegistry, PASSPORT_TOKEN_ENV};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::encryption::PassportToken;
-use serde::Serialize;
+use kitepass_crypto::verify::{
+    self, CanonicalAgentMessageArgs, CanonicalSessionCreateArgs, CanonicalValidateIntentArgs,
+};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub struct SignArgs {
@@ -25,142 +26,73 @@ pub struct SignArgs {
     pub value: String,
 }
 
-struct CanonicalSignIntent<'a> {
-    request_id: &'a str,
-    resolved_wallet_id: &'a str,
-    passport_id: &'a str,
-    chain_id: &'a str,
-    signing_type: &'a str,
-    payload: &'a str,
-    destination: &'a str,
-    value: &'a str,
-    session_nonce: &'a str,
-    mode: &'a str,
-}
-
-struct CanonicalValidateIntent<'a> {
-    request_id: &'a str,
-    passport_id: &'a str,
-    wallet_id: Option<&'a str>,
-    wallet_selector: Option<&'a str>,
-    chain_id: &'a str,
-    signing_type: &'a str,
-    payload: &'a str,
-    destination: &'a str,
-    value: &'a str,
-}
-
-struct CanonicalSessionCreate<'a> {
-    request_id: &'a str,
-    passport_id: &'a str,
-    challenge_id: &'a str,
-    challenge_nonce: &'a str,
-}
-
-#[derive(Serialize)]
-struct CanonicalAgentIntent<'a> {
-    #[serde(rename = "type")]
-    intent_type: &'a str,
-    #[serde(rename = "version")]
-    intent_version: u32,
-    request_id: &'a str,
-    wallet_id: &'a str,
-    passport_id: &'a str,
-    chain_id: &'a str,
-    signing_type: &'a str,
-    payload_hash: &'a str,
-    destination: &'a str,
-    value: &'a str,
-    session_nonce: &'a str,
-    mode: &'a str,
-}
-
-#[derive(Serialize)]
-struct CanonicalValidateProof<'a> {
-    #[serde(rename = "type")]
-    intent_type: &'a str,
-    #[serde(rename = "version")]
-    intent_version: u32,
-    request_id: &'a str,
-    passport_id: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    wallet_id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    wallet_selector: Option<&'a str>,
-    chain_id: &'a str,
-    signing_type: &'a str,
-    payload_hash: &'a str,
-    destination: &'a str,
-    value: &'a str,
-}
-
-#[derive(Serialize)]
-struct CanonicalSessionCreateProof<'a> {
-    #[serde(rename = "type")]
-    intent_type: &'a str,
-    #[serde(rename = "version")]
-    intent_version: u32,
-    request_id: &'a str,
-    passport_id: &'a str,
-    challenge_id: &'a str,
-    challenge_nonce: &'a str,
-}
-
-fn canonical_agent_message(intent: &CanonicalSignIntent<'_>) -> Result<Vec<u8>> {
-    let payload_hash = format!(
-        "0x{}",
-        hex::encode(Sha256::digest(intent.payload.as_bytes()))
-    );
-    let intent = CanonicalAgentIntent {
-        intent_type: "sign_intent",
-        intent_version: 1,
-        request_id: intent.request_id,
-        wallet_id: intent.resolved_wallet_id,
-        passport_id: intent.passport_id,
-        chain_id: intent.chain_id,
-        signing_type: intent.signing_type,
+fn build_agent_message(
+    request_id: &str,
+    wallet_id: &str,
+    passport_id: &str,
+    chain_id: &str,
+    signing_type: &str,
+    payload: &str,
+    destination: &str,
+    value: &str,
+    session_nonce: &str,
+    mode: &str,
+) -> Result<Vec<u8>> {
+    let payload_hash = verify::payload_hash_hex(payload);
+    verify::canonical_agent_message(&CanonicalAgentMessageArgs {
+        request_id,
+        wallet_id,
+        passport_id,
+        chain_id,
+        signing_type,
         payload_hash: &payload_hash,
-        destination: intent.destination,
-        value: intent.value,
-        session_nonce: intent.session_nonce,
-        mode: intent.mode,
-    };
-    serde_json_canonicalizer::to_vec(&intent).context("Failed to canonicalize sign intent")
+        destination,
+        value,
+        session_nonce,
+        mode,
+    })
+    .context("Failed to canonicalize sign intent")
 }
 
-fn payload_hash(payload: &str) -> String {
-    format!("0x{}", hex::encode(Sha256::digest(payload.as_bytes())))
-}
-
-fn canonical_validate_message(intent: &CanonicalValidateIntent<'_>) -> Result<Vec<u8>> {
-    let payload_hash = payload_hash(intent.payload);
-    let intent = CanonicalValidateProof {
-        intent_type: "validate_sign_intent",
-        intent_version: 1,
-        request_id: intent.request_id,
-        passport_id: intent.passport_id,
-        wallet_id: intent.wallet_id,
-        wallet_selector: intent.wallet_selector,
-        chain_id: intent.chain_id,
-        signing_type: intent.signing_type,
+fn build_validate_message(
+    request_id: &str,
+    passport_id: &str,
+    wallet_id: Option<&str>,
+    wallet_selector: Option<&str>,
+    chain_id: &str,
+    signing_type: &str,
+    payload: &str,
+    destination: &str,
+    value: &str,
+) -> Result<Vec<u8>> {
+    let payload_hash = verify::payload_hash_hex(payload);
+    verify::canonical_validate_intent_message(&CanonicalValidateIntentArgs {
+        request_id,
+        passport_id,
+        wallet_id,
+        wallet_selector,
+        chain_id,
+        signing_type,
         payload_hash: &payload_hash,
-        destination: intent.destination,
-        value: intent.value,
-    };
-    serde_json_canonicalizer::to_vec(&intent)
-        .context("Failed to canonicalize validate-sign-intent proof")
+        destination,
+        value,
+    })
+    .context("Failed to canonicalize validate-sign-intent proof")
 }
 
-fn canonical_session_create_message(intent: &CanonicalSessionCreate<'_>) -> Result<Vec<u8>> {
-    let intent = CanonicalSessionCreateProof {
-        intent_type: "create_session",
-        intent_version: 1,
-        request_id: intent.request_id,
-        passport_id: intent.passport_id,
-        challenge_id: intent.challenge_id,
-        challenge_nonce: intent.challenge_nonce,
-    };
-    serde_json_canonicalizer::to_vec(&intent).context("Failed to canonicalize create-session proof")
+fn build_session_create_message(
+    request_id: &str,
+    passport_id: &str,
+    challenge_id: &str,
+    challenge_nonce: &str,
+) -> Result<Vec<u8>> {
+    verify::canonical_session_create_message(&CanonicalSessionCreateArgs {
+        request_id,
+        passport_id,
+        challenge_id,
+        challenge_nonce,
+    })
+    .context("Failed to canonicalize create-session proof")
 }
 
 fn sign_hex(agent_key: &AgentKey, message: &[u8]) -> String {
@@ -273,17 +205,17 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             let signer = resolve_signer(args.passport_id, &registry)?;
             let proof_signature = sign_hex(
                 &signer.agent_key,
-                &canonical_validate_message(&CanonicalValidateIntent {
-                    request_id: &request_id,
-                    passport_id: &signer.passport_id,
-                    wallet_id: args.wallet_id.as_deref(),
-                    wallet_selector: wallet_selector.as_deref(),
-                    chain_id: &args.chain_id,
-                    signing_type: &args.signing_type,
-                    payload: &args.payload,
-                    destination: &args.destination,
-                    value: &args.value,
-                })?,
+                &build_validate_message(
+                    &request_id,
+                    &signer.passport_id,
+                    args.wallet_id.as_deref(),
+                    wallet_selector.as_deref(),
+                    &args.chain_id,
+                    &args.signing_type,
+                    &args.payload,
+                    &args.destination,
+                    &args.value,
+                )?,
             );
             client
                 .validate_sign_intent(&ValidateSignIntentRequest {
@@ -355,17 +287,17 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
         let idempotency_key = format!("idem_{}", Uuid::new_v4().simple());
         let validate_proof_signature = sign_hex(
             &resolved_signer.agent_key,
-            &canonical_validate_message(&CanonicalValidateIntent {
-                request_id: &request_id,
-                passport_id: &resolved_signer.passport_id,
-                wallet_id: args.wallet_id.as_deref(),
-                wallet_selector: wallet_selector.as_deref(),
-                chain_id: &args.chain_id,
-                signing_type: &args.signing_type,
-                payload: &args.payload,
-                destination: &args.destination,
-                value: &args.value,
-            })?,
+            &build_validate_message(
+                &request_id,
+                &resolved_signer.passport_id,
+                args.wallet_id.as_deref(),
+                wallet_selector.as_deref(),
+                &args.chain_id,
+                &args.signing_type,
+                &args.payload,
+                &args.destination,
+                &args.value,
+            )?,
         );
         let validate = client
             .validate_sign_intent(&ValidateSignIntentRequest {
@@ -401,12 +333,12 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 challenge_id: Some(challenge.challenge_id.clone()),
                 proof_signature: Some(sign_hex(
                     &resolved_signer.agent_key,
-                    &canonical_session_create_message(&CanonicalSessionCreate {
-                        request_id: &session_request_id,
-                        passport_id: &resolved_signer.passport_id,
-                        challenge_id: &challenge.challenge_id,
-                        challenge_nonce: &challenge.challenge_nonce,
-                    })?,
+                    &build_session_create_message(
+                        &session_request_id,
+                        &resolved_signer.passport_id,
+                        &challenge.challenge_id,
+                        &challenge.challenge_nonce,
+                    )?,
                 )),
             })
             .await
@@ -414,18 +346,18 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
 
         let signature = sign_hex(
             &resolved_signer.agent_key,
-            &canonical_agent_message(&CanonicalSignIntent {
-                request_id: &request_id,
-                resolved_wallet_id: &validate.resolved_wallet_id,
-                passport_id: &resolved_signer.passport_id,
-                chain_id: &args.chain_id,
-                signing_type: &args.signing_type,
-                payload: &args.payload,
-                destination: &args.destination,
-                value: &args.value,
-                session_nonce: &session.session_nonce,
-                mode: mode_name,
-            })?,
+            &build_agent_message(
+                &request_id,
+                &validate.resolved_wallet_id,
+                &resolved_signer.passport_id,
+                &args.chain_id,
+                &args.signing_type,
+                &args.payload,
+                &args.destination,
+                &args.value,
+                &session.session_nonce,
+                mode_name,
+            )?,
         );
 
         let response = client
@@ -459,15 +391,18 @@ mod tests {
 
     #[test]
     fn payload_hash_is_sha256_hex() {
-        let hash = payload_hash("0xdeadbeef");
+        let hash = verify::payload_hash_hex("0xdeadbeef");
         assert!(hash.starts_with("0x"));
         assert_eq!(hash.len(), 2 + 64); // 0x + 32 bytes hex
     }
 
     #[test]
     fn payload_hash_is_deterministic() {
-        assert_eq!(payload_hash("test"), payload_hash("test"));
-        assert_ne!(payload_hash("a"), payload_hash("b"));
+        assert_eq!(
+            verify::payload_hash_hex("test"),
+            verify::payload_hash_hex("test")
+        );
+        assert_ne!(verify::payload_hash_hex("a"), verify::payload_hash_hex("b"));
     }
 
     #[test]
@@ -495,18 +430,18 @@ mod tests {
     }
 
     #[test]
-    fn canonical_validate_message_includes_type_and_version() {
-        let message = canonical_validate_message(&CanonicalValidateIntent {
-            request_id: "req_123",
-            passport_id: "agp_123",
-            wallet_id: Some("wal_123"),
-            wallet_selector: None,
-            chain_id: "eip155:8453",
-            signing_type: "transaction",
-            payload: "0xdeadbeef",
-            destination: "0xabc",
-            value: "10",
-        })
+    fn build_validate_message_includes_type_and_version() {
+        let message = build_validate_message(
+            "req_123",
+            "agp_123",
+            Some("wal_123"),
+            None,
+            "eip155:8453",
+            "transaction",
+            "0xdeadbeef",
+            "0xabc",
+            "10",
+        )
         .expect("should canonicalize");
 
         let canonical = String::from_utf8(message).expect("should be utf-8");
@@ -516,18 +451,18 @@ mod tests {
     }
 
     #[test]
-    fn canonical_validate_message_omits_null_wallet_id() {
-        let message = canonical_validate_message(&CanonicalValidateIntent {
-            request_id: "req_123",
-            passport_id: "agp_123",
-            wallet_id: None,
-            wallet_selector: Some("auto"),
-            chain_id: "eip155:8453",
-            signing_type: "transaction",
-            payload: "0xdeadbeef",
-            destination: "0xabc",
-            value: "10",
-        })
+    fn build_validate_message_omits_null_wallet_id() {
+        let message = build_validate_message(
+            "req_123",
+            "agp_123",
+            None,
+            Some("auto"),
+            "eip155:8453",
+            "transaction",
+            "0xdeadbeef",
+            "0xabc",
+            "10",
+        )
         .expect("should canonicalize");
 
         let canonical = String::from_utf8(message).expect("should be utf-8");
@@ -536,14 +471,9 @@ mod tests {
     }
 
     #[test]
-    fn canonical_session_create_message_includes_challenge() {
-        let message = canonical_session_create_message(&CanonicalSessionCreate {
-            request_id: "req_sess",
-            passport_id: "agp_123",
-            challenge_id: "sch_456",
-            challenge_nonce: "nonce_789",
-        })
-        .expect("should canonicalize");
+    fn build_session_create_message_includes_challenge() {
+        let message = build_session_create_message("req_sess", "agp_123", "sch_456", "nonce_789")
+            .expect("should canonicalize");
 
         let canonical = String::from_utf8(message).expect("should be utf-8");
         assert!(canonical.contains("\"type\":\"create_session\""));
@@ -552,19 +482,19 @@ mod tests {
     }
 
     #[test]
-    fn canonical_agent_message_uses_requested_mode() {
-        let message = canonical_agent_message(&CanonicalSignIntent {
-            request_id: "req_123",
-            resolved_wallet_id: "wal_123",
-            passport_id: "agp_123",
-            chain_id: "eip155:8453",
-            signing_type: "transaction",
-            payload: "0xdeadbeef",
-            destination: "0xabc",
-            value: "10",
-            session_nonce: "nonce_123",
-            mode: "sign_and_submit",
-        })
+    fn build_agent_message_uses_requested_mode() {
+        let message = build_agent_message(
+            "req_123",
+            "wal_123",
+            "agp_123",
+            "eip155:8453",
+            "transaction",
+            "0xdeadbeef",
+            "0xabc",
+            "10",
+            "nonce_123",
+            "sign_and_submit",
+        )
         .expect("canonical sign intent should canonicalize");
 
         let canonical = String::from_utf8(message).expect("canonical message should be utf-8");

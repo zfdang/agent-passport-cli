@@ -381,7 +381,10 @@ async fn test_owner_query_surfaces() {
     assert!(verify.valid);
 
     let operation = client.get_operation("op_123").await.unwrap();
-    assert_eq!(operation.status, "completed");
+    assert_eq!(
+        operation.status,
+        kitepass_api_client::OperationStatus::Completed
+    );
 }
 
 #[tokio::test]

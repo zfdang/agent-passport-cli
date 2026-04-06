@@ -17,6 +17,7 @@ repository = "https://github.com/zfdang/agent-passport-cli"
 # ── workspace crates ─────────────────────────────────────
 kitepass-api-client = { path = "crates/kitepass-api-client" }
 kitepass-config     = { path = "crates/kitepass-config" }
+kitepass-api-types  = { path = "../agent-passport-protocol/crates/kitepass-api-types" }
 kitepass-crypto     = { path = "../agent-passport-protocol/crates/kitepass-crypto" }
 kitepass-output     = { path = "crates/kitepass-output" }
 

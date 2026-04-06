@@ -1265,10 +1265,21 @@ name = "kitepass-api-client"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "kitepass-api-types",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "kitepass-api-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1292,7 +1303,6 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
- "serde_json_canonicalizer",
  "sha2",
  "tempfile",
  "thiserror",
