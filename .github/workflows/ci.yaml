@@ -105,6 +105,37 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --locked
 
+  coverage-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Checkout protocol repository
+        uses: actions/checkout@v5
+        with:
+          repository: zfdang/agent-passport-protocol
+          path: agent-passport-protocol
+
+      - name: Symlink protocol to expected sibling path
+        run: ln -s "$GITHUB_WORKSPACE/agent-passport-protocol" ../agent-passport-protocol
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Generate coverage summary
+        run: bash scripts/run_coverage_gate.sh
+
   build-smoke:
     runs-on: ubuntu-latest
     permissions:
