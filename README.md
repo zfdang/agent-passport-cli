@@ -44,7 +44,7 @@ The current delegated-signing flow is:
 2. import a wallet
 3. create and activate a policy for that wallet
 4. create a bound runtime passport attached to the wallet and policy
-5. export the one-time Passport Token for that bound key
+5. export the one-time Passport Token, then log out the owner session
 6. validate the signing route
 7. request a signature without broadcast
 8. optionally sign and submit through the relayer
@@ -101,7 +101,6 @@ kitepass --json passport-policy activate --passport-policy-id "$POLICY_ID"
 ```bash
 BOUND_KEY_JSON="$(
   kitepass --json passport create \
-    --name demo-agent \
     --wallet-id "$WALLET_ID" \
     --passport-policy-id "$POLICY_ID"
 )"
@@ -115,9 +114,9 @@ echo "passport_token_prefix=${KITE_PASSPORT_TOKEN:0:24}..."
 
 This command:
 
-- generates a new Ed25519 agent key locally
+- generates a new Ed25519 passport key locally
 - encrypts the private key into an inline `CryptoEnvelope`
-- stores that encrypted profile in `~/.kitepass/agents.toml`
+- stores that encrypted local passport record in `~/.kitepass/passports.toml`
 - prints a one-time Passport Token
 
 The Passport Token format is:
@@ -149,11 +148,15 @@ KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" your-agent-runtime
 
 If you lose the full token value, revoke that passport and create a new one. The CLI does not print the full token again.
 
-### 5. Select The Active Local Profile
+### 5. Log Out The Owner Session
+
+Once the wallet, policy, and Agent Passport are provisioned, the owner session is no longer needed for runtime signing. Log it out locally before handing the Passport Token to the agent runtime:
 
 ```bash
-kitepass --json profile use --name demo-agent
+kitepass --json logout
 ```
+
+`logout` clears the encrypted owner session from `config.toml`, removes `access-token.secret`, and leaves `passports.toml` untouched.
 
 ### 6. Validate The Signing Route
 
@@ -243,9 +246,9 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
   - encrypted principal session token envelope
 - `~/.kitepass/access-token.secret`
   - local secret used to decrypt the stored principal session token
-- `~/.kitepass/agents.toml`
-  - local agent profiles
-  - encrypted inline `CryptoEnvelope` records for agent private keys
+- `~/.kitepass/passports.toml`
+  - local encrypted passport-key records
+  - inline `CryptoEnvelope` records for passport private keys
 
 ## Troubleshooting
 
@@ -259,8 +262,10 @@ Kitepass CLI stores owner and agent state under `~/.kitepass/`:
   - accepted aliases are normalized to `evm`
 - `passport-policy create` must happen before the passport is created
   - create the policy first, then create the passport with `--wallet-id` and `--passport-policy-id`
-- if `kitepass sign` says no local encrypted profile was found
-  - recreate the passport on the same machine, or sync `~/.kitepass/agents.toml`
+- if `kitepass sign` says no local encrypted passport key was found
+  - recreate the passport on the same machine, or sync `~/.kitepass/passports.toml`
+- `kitepass logout` removes only the owner session
+  - local passport keys in `~/.kitepass/passports.toml` remain available for agent signing
 
 ## Additional Docs
 

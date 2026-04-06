@@ -503,3 +503,48 @@ async fn test_agent_signing_surfaces() {
         .unwrap();
     assert_eq!(sign.signature.as_deref(), Some("0xwalletsig"));
 }
+
+#[tokio::test]
+async fn test_logout_api_client() {
+    use kitepass_api_client::PassportClient;
+
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/principal-auth/logout"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "logged_out"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let client = PassportClient::new(mock_server.uri())
+        .expect("passport client should initialize")
+        .with_token("token_to_invalidate".to_string());
+
+    let result = client.logout().await;
+    assert!(result.is_ok());
+    let status = result.unwrap();
+    assert_eq!(status.status, "logged_out");
+}
+
+#[tokio::test]
+async fn test_logout_without_token_succeeds() {
+    use kitepass_api_client::PassportClient;
+
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/principal-auth/logout"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "logged_out"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Client without token
+    let client = PassportClient::new(mock_server.uri()).expect("passport client should initialize");
+
+    let result = client.logout().await;
+    assert!(result.is_ok());
+}

@@ -7,10 +7,10 @@ use crate::types::{
     ImportSessionResponse, Operation, Passport, PassportListResponse, PassportMutationRequest,
     PassportPolicy, PassportPolicyUsageState, PolicyListResponse, PreparePassportResponse,
     PrincipalApprovalRecord, ProvisioningIntentStatusResponse, RegisterPassportRequest,
-    RegisterPassportResponse, SignRequest, SignResponse, UploadWalletCiphertextRequest,
-    UploadWalletCiphertextResponse, UsageResponse, ValidateSignIntentRequest,
-    ValidateSignIntentResponse, VerifyAuditResponse, Wallet, WalletListResponse,
-    WalletMutationRequest, WalletPassportBinding,
+    RegisterPassportResponse, SignRequest, SignResponse, StatusResponse,
+    UploadWalletCiphertextRequest, UploadWalletCiphertextResponse, UsageResponse,
+    ValidateSignIntentRequest, ValidateSignIntentResponse, VerifyAuditResponse, Wallet,
+    WalletListResponse, WalletMutationRequest, WalletPassportBinding,
 };
 
 /// HTTP client for the Passport API.
@@ -81,6 +81,13 @@ impl PassportClient {
     ) -> Result<AuthPollResponse, ApiError> {
         let url = format!("{}/v1/principal-auth/poll/{}", self.base_url, device_code);
         let res = self.http.post(&url).json(req_body).send().await?;
+        Self::handle_res(res).await
+    }
+
+    pub async fn logout(&self) -> Result<StatusResponse, ApiError> {
+        let url = format!("{}/v1/principal-auth/logout", self.base_url);
+        let req = self.maybe_auth(self.http.post(&url));
+        let res = req.send().await?;
         Self::handle_res(res).await
     }
 

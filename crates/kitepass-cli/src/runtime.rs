@@ -22,7 +22,7 @@ impl RuntimeOptions {
             output_format: if cli.json {
                 OutputFormat::Json
             } else {
-                cli.format.clone()
+                cli.format
             },
             quiet: cli.quiet,
             no_color: cli.no_color,

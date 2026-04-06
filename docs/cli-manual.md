@@ -63,7 +63,7 @@ This sequence is the most reliable way to reach a successful runtime signing flo
 ### 4.1 Create And Activate A Policy
 
 ```bash
-kitepass --json policy create \
+kitepass --json passport-policy create \
   --wallet-id <wallet-id> \
   --allowed-chain eip155:8453 \
   --allowed-action transaction \
@@ -81,12 +81,11 @@ kitepass --json passport-policy activate --passport-policy-id <passport-policy-i
 
 ```bash
 kitepass --json passport create \
-  --name trading-bot \
   --wallet-id <wallet-id> \
   --passport-policy-id <passport-policy-id>
 ```
 
-This creates or updates a local agent profile in `~/.kitepass/agents.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Passport Token:
+This writes a local encrypted passport-key record into `~/.kitepass/passports.toml`, encrypts the private key into an inline `CryptoEnvelope`, and prints the one-time Passport Token:
 
 ```text
 kite_passport_<passport_id>__<secret_key>
@@ -99,27 +98,27 @@ Important notes:
 - if the token is lost, revoke the key and mint a new one
 - there is no post-creation bind command; create a new bound key instead
 
-## 5. Local Profiles
+## 5. Local Passport Records And Logout
 
-List local profiles:
-
-```bash
-kitepass --json profile list
-```
-
-Select the active profile:
+List locally stored encrypted passport keys:
 
 ```bash
-kitepass --json profile use --name trading-bot
+kitepass --json passport local list
 ```
 
-Delete a local profile record:
+Delete a local passport-key record:
 
 ```bash
-kitepass --json profile delete --name trading-bot
+kitepass --json passport local delete --passport-id <passport-id>
 ```
 
-`profile list` shows safe metadata such as `private_key_storage = "encrypted_inline"` and envelope algorithm details without printing the encrypted blob itself.
+Log out the owner session after provisioning is complete:
+
+```bash
+kitepass --json logout
+```
+
+`passport local list` shows safe metadata such as `private_key_storage = "encrypted_inline"` and envelope algorithm details without printing the encrypted blob itself. `logout` clears `config.toml` and `access-token.secret`, but leaves `passports.toml` untouched for runtime signing.
 
 ## 6. Signing
 
@@ -166,7 +165,7 @@ Key behavior:
 - `chain_id` uses CAIP-2 notation, such as `eip155:8453`
 - `kitepass sign` requires `KITE_PASSPORT_TOKEN`
 - `kitepass sign` internally runs validate, requests a session challenge, creates an agent session, and then submits the final sign request
-- the CLI parses the embedded `passport_id`, finds the matching encrypted profile in `~/.kitepass/agents.toml`, decrypts the local private key, and signs the canonical agent intent locally
+- the CLI parses the embedded `passport_id`, finds the matching encrypted passport-key record in `~/.kitepass/passports.toml`, decrypts the local private key, and signs the canonical agent intent locally
 - the Gateway then validates agent proof, policy state, wallet binding, and limits before returning the final signature
 
 ### 6.3 Sign And Broadcast
@@ -204,15 +203,17 @@ Kitepass CLI stores state in `~/.kitepass/`:
   - encrypted owner access-token envelope
 - `access-token.secret`
   - local secret used to decrypt the stored principal session token
-- `agents.toml`
-  - encrypted local agent profiles
+- `passports.toml`
+  - encrypted local passport-key records
 
 ## 9. Troubleshooting
 
 - **Missing Passport Token**
   - `kitepass sign` and `kitepass sign --broadcast` fail by design without `KITE_PASSPORT_TOKEN`
-- **No local encrypted profile**
-  - the agent passport was created on another machine, or `agents.toml` is missing
+- **No local encrypted passport key**
+  - the agent passport was created on another machine, or `passports.toml` is missing
+- **Owner session should be cleared after provisioning**
+  - use `kitepass logout` once wallet import, policy creation, and passport creation are complete
 - **Policy creation order**
   - create the policy first, then provision the bound runtime key with `--wallet-id` and `--passport-policy-id`
 - **Wallet import chain family**

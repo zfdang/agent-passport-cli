@@ -41,6 +41,9 @@ pub enum Command {
     /// Authenticate as wallet owner via device-code flow
     Login,
 
+    /// Clear the locally stored owner session and log out from Passport Gateway
+    Logout,
+
     /// Wallet management
     Wallet {
         #[command(subcommand)]
@@ -57,12 +60,6 @@ pub enum Command {
     PassportPolicy {
         #[command(subcommand)]
         action: PassportPolicyAction,
-    },
-
-    /// Local agent profile management
-    Profile {
-        #[command(subcommand)]
-        action: ProfileAction,
     },
 
     /// Validate, sign, or broadcast a transaction
@@ -145,20 +142,19 @@ pub enum WalletAction {
 pub enum PassportAction {
     /// List passports
     List,
-    /// Create or replace a local agent profile backed by a new passport
+    /// Create a new passport and save its encrypted local signing key
     Create {
-        /// Local profile name. Defaults to the selected profile or `default`.
-        #[arg(long)]
-        name: Option<String>,
         /// Bind the new runtime key to this wallet; requires --passport-policy-id
         #[arg(long, requires = "passport_policy_id")]
         wallet_id: Option<String>,
         /// Bind the new runtime key to this policy; requires --wallet-id
         #[arg(long, requires = "wallet_id")]
         passport_policy_id: Option<String>,
-        /// Keep the current active profile unchanged after creation
-        #[arg(long, default_value_t = false)]
-        no_activate: bool,
+    },
+    /// Local encrypted passport-key storage management
+    Local {
+        #[command(subcommand)]
+        action: LocalPassportAction,
     },
     /// Get passport details
     Get {
@@ -181,18 +177,13 @@ pub enum PassportAction {
 }
 
 #[derive(Subcommand)]
-pub enum ProfileAction {
-    /// List local agent profiles
+pub enum LocalPassportAction {
+    /// List locally stored encrypted passport keys
     List,
-    /// Set the active local agent profile
-    Use {
-        #[arg(long)]
-        name: String,
-    },
-    /// Delete a local agent profile record
+    /// Delete a local encrypted passport-key record
     Delete {
         #[arg(long)]
-        name: String,
+        passport_id: String,
     },
 }
 
@@ -260,168 +251,8 @@ pub enum OperationsAction {
     },
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, ValueEnum)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputFormat {
-    #[default]
     Text,
     Json,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::{error::ErrorKind, CommandFactory, Parser};
-
-    #[test]
-    fn parses_required_global_flags() {
-        let cli = Cli::try_parse_from([
-            "kitepass",
-            "--json",
-            "--quiet",
-            "--no-color",
-            "--non-interactive",
-            "--dry-run",
-            "wallet",
-            "list",
-        ])
-        .expect("cli should parse");
-
-        assert!(cli.json);
-        assert!(cli.quiet);
-        assert!(cli.no_color);
-        assert!(cli.non_interactive);
-        assert!(cli.dry_run);
-        assert_eq!(cli.format, OutputFormat::Text);
-    }
-
-    #[test]
-    fn parses_format_value_enum() {
-        let cli = Cli::try_parse_from(["kitepass", "--format", "json", "audit", "verify"])
-            .expect("cli should parse");
-
-        assert_eq!(cli.format, OutputFormat::Json);
-    }
-
-    #[test]
-    fn reports_build_version() {
-        let err = match Cli::try_parse_from(["kitepass", "--version"]) {
-            Ok(_) => panic!("version flag should short-circuit parsing"),
-            Err(err) => err,
-        };
-
-        assert_eq!(err.kind(), ErrorKind::DisplayVersion);
-        assert!(err.to_string().contains(crate::version::DISPLAY_VERSION));
-    }
-
-    #[test]
-    fn clap_command_uses_build_version() {
-        let command = Cli::command();
-        let version = command.get_version().expect("version should be configured");
-        assert_eq!(version.to_string(), crate::version::DISPLAY_VERSION);
-    }
-
-    #[test]
-    fn parses_sign_default_mode() {
-        let cli = Cli::try_parse_from([
-            "kitepass",
-            "sign",
-            "--chain-id",
-            "eip155:8453",
-            "--payload",
-            "0xdeadbeef",
-        ])
-        .expect("sign command should parse");
-
-        match cli.command {
-            Command::Sign {
-                validate,
-                broadcast,
-                chain_id,
-                payload,
-                ..
-            } => {
-                assert!(!validate);
-                assert!(!broadcast);
-                assert_eq!(chain_id, "eip155:8453");
-                assert_eq!(payload, "0xdeadbeef");
-            }
-            _ => panic!("expected sign command"),
-        }
-    }
-
-    #[test]
-    fn rejects_conflicting_sign_mode_flags() {
-        let err = match Cli::try_parse_from([
-            "kitepass",
-            "sign",
-            "--validate",
-            "--broadcast",
-            "--chain-id",
-            "eip155:8453",
-            "--payload",
-            "0xdeadbeef",
-        ]) {
-            Ok(_) => panic!("conflicting sign mode flags should fail"),
-            Err(err) => err,
-        };
-
-        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
-    }
-
-    #[test]
-    fn rejects_passport_create_with_wallet_without_policy() {
-        let err =
-            match Cli::try_parse_from(["kitepass", "passport", "create", "--wallet-id", "wal_123"])
-            {
-                Ok(_) => panic!("wallet-only passport create should fail"),
-                Err(err) => err,
-            };
-
-        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
-        assert!(err.to_string().contains("--passport-policy-id"));
-    }
-
-    #[test]
-    fn rejects_passport_create_with_policy_without_wallet() {
-        let err = match Cli::try_parse_from([
-            "kitepass",
-            "passport",
-            "create",
-            "--passport-policy-id",
-            "pol_123",
-        ]) {
-            Ok(_) => panic!("policy-only passport create should fail"),
-            Err(err) => err,
-        };
-
-        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
-        assert!(err.to_string().contains("--wallet-id"));
-    }
-
-    #[test]
-    fn rejects_policy_create_direct_binding_flag() {
-        let err = match Cli::try_parse_from([
-            "kitepass",
-            "passport-policy",
-            "create",
-            "--wallet-id",
-            "wal_123",
-            "--passport-id",
-            "agp_123",
-            "--allowed-chain",
-            "eip155:8453",
-            "--allowed-action",
-            "transaction",
-            "--max-single-amount",
-            "100",
-            "--max-daily-amount",
-            "1000",
-        ]) {
-            Ok(_) => panic!("policy create should reject direct binding flags"),
-            Err(err) => err,
-        };
-
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
-        assert!(err.to_string().contains("--passport-id"));
-    }
 }

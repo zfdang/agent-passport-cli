@@ -1,9 +1,9 @@
-# Passport Token And Encrypted Profile Notes
+# Passport Token And Local Passport Record Notes
 
 > **状态**：历史实现说明 / 已基本落地
 >
-> 这份文档原本是 Passport Token、加密本地身份存储、以及 CAIP-2
-> 路由的实现计划。截止 2026-04-03，其中大部分已经在当前
+> 这份文档原本是 Passport Token、本地加密身份存储、以及 CAIP-2
+> 路由的实现计划。截止 2026-04-06，其中大部分已经在当前
 > `kitepass-cli` 代码中落地。
 
 ## 当前已落地的行为
@@ -21,7 +21,7 @@ kite_passport_<passport_id>__<secret_key>
 - `kitepass passport create` 只展示一次 Passport Token
 - CLI 不会把 Passport Token 直接写入本地文件
 - 运行时通过 `KITE_PASSPORT_TOKEN` 读取它
-- Token 中的 `passport_id` 用于匹配本地 profile
+- Token 中的 `passport_id` 用于匹配本地 passport record
 - Token 中的 `secret_key` 用于解密本地加密私钥
 
 ### 2. 本地加密存储
@@ -30,15 +30,25 @@ kite_passport_<passport_id>__<secret_key>
 
 - `~/.kitepass/config.toml`
 - `~/.kitepass/access-token.secret`
-- `~/.kitepass/agents.toml`
+- `~/.kitepass/passports.toml`
 
 其中：
 
 - principal session token 以加密 envelope 形式存入 `config.toml`
-- 本地 agent 私钥以内联 `CryptoEnvelope` 形式存入 `agents.toml`
+- 本地 agent 私钥以内联 `CryptoEnvelope` 形式存入 `passports.toml`
 - 明文 PEM 文件不再是正常运行路径的一部分
+- 本地不再有单独的别名 / 默认选择层
 
-### 3. CAIP-2 链路由
+### 3. Owner Logout
+
+当前 `kitepass logout` 已落地：
+
+- 会尝试调用 Gateway 的 `/v1/principal-auth/logout`
+- 会清除本地 `config.toml` 中的 owner session
+- 会删除 `~/.kitepass/access-token.secret`
+- 不会删除 `~/.kitepass/passports.toml`
+
+### 4. CAIP-2 链路由
 
 当前签名接口继续使用 CAIP-2 `chain_id`，例如：
 
@@ -49,10 +59,9 @@ kite_passport_<passport_id>__<secret_key>
 
 - `kitepass sign --validate` 支持 `wallet_id` 显式指定
 - 如果未显式给出 `wallet_id`，CLI 会发送 `wallet_selector=auto`
-- Gateway 根据当前 passport、policy、wallet binding 和 `chain_id`
-  做路由解析
+- Gateway 根据当前 passport、policy、wallet binding 和 `chain_id` 做路由解析
 
-### 4. 当前签名调用链
+### 5. 当前签名调用链
 
 当前 `kitepass sign` 的实现顺序是：
 
@@ -69,7 +78,7 @@ kite_passport_<passport_id>__<secret_key>
 - `kitepass sign --validate` 比 `kitepass sign` 更宽松
   - 它既可以走 principal session，也可以走 `KITE_PASSPORT_TOKEN`
 - `kitepass sign` 是真正的 runtime signing path
-  - 它要求本地 agent key 可解密、可签名
+  - 它要求本地 passport key 可解密、可签名
 
 ## 这份文档现在的作用
 

@@ -1,6 +1,6 @@
 use crate::{
-    cli::PassportAction,
-    commands::{load_agent_registry, load_cli_config},
+    cli::{LocalPassportAction, PassportAction},
+    commands::{load_cli_config, load_local_passport_registry},
     error::CliError,
     runtime::Runtime,
 };
@@ -9,7 +9,7 @@ use chrono::{Duration, Utc};
 use kitepass_api_client::{
     BindingInput, BindingResult, FinalizePassportRequest, PassportClient, RegisterPassportRequest,
 };
-use kitepass_config::{AgentIdentity, DEFAULT_AGENT_PROFILE};
+use kitepass_config::{passports_path, LocalPassportRecord};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::encryption::{generate_secret_key, CryptoEnvelope, PassportToken};
 use serde::Serialize;
@@ -19,16 +19,30 @@ use zeroize::Zeroizing;
 
 #[derive(Serialize)]
 struct PassportCreateOutput<'a> {
-    profile_name: &'a str,
     passport_id: &'a str,
     status: &'a str,
     public_key: &'a str,
     passport_token: &'a str,
     bindings: &'a [BindingResult],
-    activated: bool,
+    local_private_key_saved: bool,
+    local_storage_path: String,
+}
+
+#[derive(Serialize)]
+struct LocalPassportSummary<'a> {
+    passport_id: &'a str,
+    public_key_hex: &'a str,
+    private_key_storage: &'static str,
+    encryption_cipher: &'a str,
+    encryption_kdf: &'a str,
 }
 
 pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
+    let action = match action {
+        PassportAction::Local { action } => return run_local(action, runtime),
+        other => other,
+    };
+
     let config = load_cli_config().context("Failed to load CLI config")?;
     let api_url = config.resolved_api_url();
     let token = config
@@ -49,43 +63,32 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             runtime.print_data(&passports)?;
         }
         PassportAction::Create {
-            name,
             wallet_id,
             passport_policy_id,
-            no_activate,
         } => {
             let mut registry =
-                load_agent_registry().context("Failed to load local agent registry")?;
-            let profile_name = name.unwrap_or_else(|| registry.selected_profile_name());
+                load_local_passport_registry().context("Failed to load local passport registry")?;
+            let local_storage_path = passports_path()
+                .context("Failed to resolve local passport registry path")?
+                .display()
+                .to_string();
 
             if runtime.dry_run_enabled() {
                 runtime.print_data(&json!({
                     "dry_run": true,
                     "action": "passport.create",
-                    "profile_name": profile_name,
                     "wallet_id": wallet_id,
                     "passport_policy_id": passport_policy_id,
+                    "local_storage_path": local_storage_path,
                 }))?;
                 return Ok(());
             }
 
-            if profile_name.trim().is_empty() {
-                anyhow::bail!("Profile name must not be empty");
-            }
+            runtime.progress("Generating new Ed25519 Passport...");
 
-            if profile_name == DEFAULT_AGENT_PROFILE {
-                runtime.progress("Generating new Ed25519 Passport for default profile...");
-            } else {
-                runtime.progress(format!(
-                    "Generating new Ed25519 Passport for profile `{profile_name}`..."
-                ));
-            }
-
-            // 1. Generate local keypair
             let key = AgentKey::generate();
             let pubkey_hex = key.public_key_hex();
 
-            // 2. Generate a secret key for the Passport Token and encrypt the private key
             let secret_key = generate_secret_key();
             let pem = key
                 .export_pem()
@@ -93,7 +96,6 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
             let encrypted_key = CryptoEnvelope::encrypt(pem.as_bytes(), &secret_key)
                 .context("Failed to encrypt private key")?;
 
-            // 3. Register public key on Passport Gateway
             runtime.progress(format!("Registering public key with Gateway: {pubkey_hex}"));
             let bindings = match (wallet_id.clone(), passport_policy_id.clone()) {
                 (Some(wallet_id), Some(passport_policy_id)) => {
@@ -144,61 +146,51 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 .await
                 .context("Failed to finalize passport provisioning")?;
 
-            // 4. Persist agent profile with encrypted key inline
-            registry.upsert(AgentIdentity {
-                name: profile_name.clone(),
+            registry.upsert(LocalPassportRecord {
                 passport_id: res.passport_id.clone(),
                 public_key_hex: pubkey_hex.clone(),
                 encrypted_key,
             })?;
 
-            if !no_activate {
-                registry.active_profile = Some(profile_name.clone());
-            }
-
             let mut persistence_errors = Vec::new();
+            let mut local_private_key_saved = false;
             if let Err(error) = registry.save_default() {
                 persistence_errors.push(format!(
-                    "failed to persist encrypted local agent profile: {error}"
-                ));
-            } else if !no_activate {
-                runtime.progress(format!(
-                    "Updated local agent registry and activated profile `{profile_name}`."
+                    "failed to persist encrypted local passport key: {error}"
                 ));
             } else {
+                local_private_key_saved = true;
                 runtime.progress(format!(
-                    "Updated local agent registry for profile `{profile_name}`."
+                    "Saved encrypted local passport key to `{local_storage_path}`."
                 ));
             }
 
-            // 5. Build and display the Passport Token
             let passport_token =
                 Zeroizing::new(PassportToken::format(&res.passport_id, &secret_key));
 
-            // Keep the owner config on disk for API/base settings only.
             if let Err(error) = config.save_default() {
                 persistence_errors.push(format!("failed to persist CLI config: {error}"));
             }
 
             runtime.important("╔══════════════════════════════════════════════════════════╗");
-            runtime.important("║  IMPORTANT: Save the Passport Token below immediately!         ║");
-            runtime.important("║  It will NOT be displayed again.                         ║");
-            runtime.important("║  If lost, revoke this key and create a new one.          ║");
+            runtime.important("║  IMPORTANT: Save the Passport Token below immediately!  ║");
+            runtime.important("║  It will NOT be displayed again.                        ║");
+            runtime.important("║  If lost, revoke this key and create a new one.         ║");
             runtime.important("╚══════════════════════════════════════════════════════════╝");
 
             runtime.print_data(&PassportCreateOutput {
-                profile_name: &profile_name,
                 passport_id: &res.passport_id,
                 status: &res.status,
                 public_key: &pubkey_hex,
                 passport_token: passport_token.as_str(),
                 bindings: &res.bindings,
-                activated: !no_activate,
+                local_private_key_saved,
+                local_storage_path,
             })?;
 
             if !persistence_errors.is_empty() {
                 anyhow::bail!(
-                    "Passport was created, but local persistence is incomplete: {}. Save the Passport Token above, then fix the local config/registry or revoke and recreate the passport if needed.",
+                    "Passport was created, but local persistence is incomplete: {}. Save the Passport Token above, then fix the local config/storage or revoke and recreate the passport if needed.",
                     persistence_errors.join("; ")
                 );
             }
@@ -254,7 +246,63 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
                 .with_context(|| format!("Failed to revoke passport {key_id}"))?;
             runtime.print_data(&passport)?;
         }
+        PassportAction::Local { .. } => {
+            unreachable!("local passport actions are handled before owner auth")
+        }
     }
+    Ok(())
+}
+
+fn run_local(action: LocalPassportAction, runtime: &Runtime) -> Result<()> {
+    let mut registry =
+        load_local_passport_registry().context("Failed to load local passport registry")?;
+    let local_storage_path = passports_path()
+        .context("Failed to resolve local passport registry path")?
+        .display()
+        .to_string();
+
+    match action {
+        LocalPassportAction::List => {
+            let passports = registry
+                .passports
+                .iter()
+                .map(|passport| LocalPassportSummary {
+                    passport_id: &passport.passport_id,
+                    public_key_hex: &passport.public_key_hex,
+                    private_key_storage: "encrypted_inline",
+                    encryption_cipher: &passport.encrypted_key.cipher,
+                    encryption_kdf: &passport.encrypted_key.kdf,
+                })
+                .collect::<Vec<_>>();
+            runtime.print_data(&json!({
+                "storage_path": local_storage_path,
+                "passports": passports,
+            }))?;
+        }
+        LocalPassportAction::Delete { passport_id } => {
+            if runtime.dry_run_enabled() {
+                runtime.print_data(&json!({
+                    "dry_run": true,
+                    "action": "passport.local.delete",
+                    "passport_id": passport_id,
+                    "storage_path": local_storage_path,
+                }))?;
+                return Ok(());
+            }
+
+            let removed = registry.remove_passport(&passport_id)?;
+            registry
+                .save_default()
+                .context("Failed to persist local passport registry")?;
+            runtime.print_data(&json!({
+                "status": "deleted",
+                "deleted_passport_id": removed.passport_id,
+                "remaining_local_passports": registry.passports.len(),
+                "storage_path": local_storage_path,
+            }))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -262,8 +310,6 @@ pub async fn run(action: PassportAction, runtime: &Runtime) -> Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    // ── PassportCreateOutput serialization ──────────────────────
 
     fn sample_binding() -> BindingResult {
         BindingResult {
@@ -279,21 +325,21 @@ mod tests {
     fn create_output_serializes_all_fields() {
         let bindings = vec![sample_binding()];
         let output = PassportCreateOutput {
-            profile_name: "my-agent",
             passport_id: "agp_12345",
             status: "active",
             public_key: "deadbeef01234567",
             passport_token: "kite_passport_agp_12345__secret",
             bindings: &bindings,
-            activated: true,
+            local_private_key_saved: true,
+            local_storage_path: "~/.kitepass/passports.toml".to_string(),
         };
         let value = serde_json::to_value(&output).expect("should serialize");
-        assert_eq!(value["profile_name"], "my-agent");
         assert_eq!(value["passport_id"], "agp_12345");
         assert_eq!(value["status"], "active");
         assert_eq!(value["public_key"], "deadbeef01234567");
         assert_eq!(value["passport_token"], "kite_passport_agp_12345__secret");
-        assert_eq!(value["activated"], true);
+        assert_eq!(value["local_private_key_saved"], true);
+        assert_eq!(value["local_storage_path"], "~/.kitepass/passports.toml");
         assert_eq!(value["bindings"][0]["binding_id"], "bnd_001");
         assert_eq!(value["bindings"][0]["wallet_id"], "wal_abc");
         assert_eq!(value["bindings"][0]["passport_policy_id"], "pp_xyz");
@@ -304,20 +350,18 @@ mod tests {
     #[test]
     fn create_output_with_empty_bindings() {
         let output = PassportCreateOutput {
-            profile_name: "default",
             passport_id: "agp_000",
             status: "pending",
             public_key: "aabbccdd",
             passport_token: "kite_passport_agp_000__sk",
             bindings: &[],
-            activated: false,
+            local_private_key_saved: false,
+            local_storage_path: "~/.kitepass/passports.toml".to_string(),
         };
         let value = serde_json::to_value(&output).expect("should serialize");
         assert_eq!(value["bindings"], json!([]));
-        assert_eq!(value["activated"], false);
+        assert_eq!(value["local_private_key_saved"], false);
     }
-
-    // ── Key address derivation format ───────────────────────────
 
     #[test]
     fn key_address_format_takes_first_16_hex_chars() {
@@ -334,46 +378,56 @@ mod tests {
         assert_eq!(key_address.len(), "ed25519:".len() + 16);
     }
 
-    // ── Dry-run JSON contracts ──────────────────────────────────
-
     #[test]
     fn dry_run_create_json_has_expected_shape() {
-        let profile_name = "test-profile".to_string();
         let wallet_id = Some("wal_abc".to_string());
         let passport_policy_id = Some("pp_xyz".to_string());
 
         let output = json!({
             "dry_run": true,
             "action": "passport.create",
-            "profile_name": profile_name,
             "wallet_id": wallet_id,
             "passport_policy_id": passport_policy_id,
+            "local_storage_path": "~/.kitepass/passports.toml",
         });
 
         assert_eq!(output["dry_run"], true);
         assert_eq!(output["action"], "passport.create");
-        assert_eq!(output["profile_name"], "test-profile");
         assert_eq!(output["wallet_id"], "wal_abc");
         assert_eq!(output["passport_policy_id"], "pp_xyz");
+        assert_eq!(output["local_storage_path"], "~/.kitepass/passports.toml");
     }
 
     #[test]
     fn dry_run_create_json_null_wallet_policy() {
-        let profile_name = "default".to_string();
         let wallet_id: Option<String> = None;
         let passport_policy_id: Option<String> = None;
 
         let output = json!({
             "dry_run": true,
             "action": "passport.create",
-            "profile_name": profile_name,
             "wallet_id": wallet_id,
             "passport_policy_id": passport_policy_id,
+            "local_storage_path": "~/.kitepass/passports.toml",
         });
 
         assert_eq!(output["dry_run"], true);
         assert!(output["wallet_id"].is_null());
         assert!(output["passport_policy_id"].is_null());
+    }
+
+    #[test]
+    fn dry_run_local_delete_json_has_expected_shape() {
+        let output = json!({
+            "dry_run": true,
+            "action": "passport.local.delete",
+            "passport_id": "agp_local",
+            "storage_path": "~/.kitepass/passports.toml",
+        });
+
+        assert_eq!(output["dry_run"], true);
+        assert_eq!(output["action"], "passport.local.delete");
+        assert_eq!(output["passport_id"], "agp_local");
     }
 
     #[test]
@@ -404,13 +458,10 @@ mod tests {
         assert_eq!(output["passport_id"], "agp_revoke_me");
     }
 
-    // ── Idempotency key format ──────────────────────────────────
-
     #[test]
     fn idempotency_key_has_idem_prefix() {
         let key = format!("idem_{}", Uuid::new_v4().simple());
         assert!(key.starts_with("idem_"));
-        // uuid simple format is 32 hex chars
         assert_eq!(key.len(), "idem_".len() + 32);
     }
 
@@ -421,39 +472,10 @@ mod tests {
         assert_ne!(key1, key2);
     }
 
-    // ── Profile name validation ─────────────────────────────────
-
-    #[test]
-    fn empty_profile_name_is_rejected() {
-        // Mirrors the validation at line 73: profile_name.trim().is_empty()
-        let profile_name = "   ";
-        assert!(
-            profile_name.trim().is_empty(),
-            "whitespace-only profile name should be treated as empty"
-        );
-    }
-
-    #[test]
-    fn non_empty_profile_name_is_accepted() {
-        let profile_name = "my-agent";
-        assert!(
-            !profile_name.trim().is_empty(),
-            "non-empty profile name should be accepted"
-        );
-    }
-
-    #[test]
-    fn default_profile_name_is_recognized() {
-        assert_eq!(DEFAULT_AGENT_PROFILE, "default");
-    }
-
-    // ── Binding input pair validation ───────────────────────────
-
     #[test]
     fn both_wallet_and_policy_provided_is_valid() {
         let wallet_id: Option<String> = Some("wal_abc".into());
         let passport_policy_id: Option<String> = Some("pp_xyz".into());
-        // This match mirrors lines 99-119 of run()
         let result = match (wallet_id, passport_policy_id) {
             (Some(_), Some(_)) => Ok("both provided"),
             (None, None) => Ok("neither provided"),
@@ -498,20 +520,15 @@ mod tests {
         assert_eq!(result, Err("must be provided together"));
     }
 
-    // ── Expires-at timestamp format ─────────────────────────────
-
     #[test]
     fn expires_at_is_rfc3339_one_year_from_now() {
         let now = Utc::now();
         let expires = now + Duration::days(365);
         let formatted = expires.to_rfc3339();
-        // RFC 3339 must contain 'T' and timezone info
         assert!(formatted.contains('T'));
-        // Parse it back to ensure round-trip validity
         let parsed = chrono::DateTime::parse_from_rfc3339(&formatted)
             .expect("expires_at should be valid RFC 3339");
         let diff = parsed.signed_duration_since(now);
-        // Should be approximately 365 days (within a few seconds of test execution)
         assert!(diff.num_days() >= 364 && diff.num_days() <= 365);
     }
 }

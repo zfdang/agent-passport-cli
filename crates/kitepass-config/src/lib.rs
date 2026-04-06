@@ -1,4 +1,4 @@
-pub mod agents;
+pub mod passports;
 
 use kitepass_crypto::encryption::{generate_secret_key, CryptoEnvelope, EncryptionError};
 use serde::{Deserialize, Serialize};
@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 
-pub use agents::{
-    env_passport_token, load_agent_registry_default, validate_profile_name, AgentIdentity,
-    AgentRegistry, AGENT_PROFILE_ENV, DEFAULT_AGENT_PROFILE, PASSPORT_TOKEN_ENV,
+pub use passports::{
+    env_passport_token, load_local_passport_registry_default, validate_passport_id,
+    LocalPassportRecord, LocalPassportRegistry, PASSPORT_TOKEN_ENV,
 };
 
 pub const DEFAULT_API_URL: &str = "https://api.kitepass.xyz";
@@ -27,10 +27,10 @@ pub enum ConfigError {
     Toml(#[from] toml::de::Error),
     #[error("TOML serialization error: {0}")]
     TomlSer(#[from] toml::ser::Error),
-    #[error("profile not found: {0}")]
-    ProfileNotFound(String),
-    #[error("invalid profile name: {0}")]
-    InvalidProfileName(String),
+    #[error("passport not found in local storage: {0}")]
+    PassportNotFound(String),
+    #[error("invalid passport id: {0}")]
+    InvalidPassportId(String),
     #[error("missing home directory for {0}")]
     MissingHomeDirectory(&'static str),
     #[error("invalid Passport Token format: expected kite_passport_<passport_id>__<secret_key>")]
@@ -94,6 +94,25 @@ impl CliConfig {
     /// Saves the configuration to the default path.
     pub fn save_default(&self) -> Result<(), ConfigError> {
         self.save(&config_path()?)
+    }
+
+    /// Clears the locally persisted owner bearer token and its sidecar decrypt secret.
+    pub fn clear_owner_session(&mut self, path: &Path) -> Result<(), ConfigError> {
+        self.access_token = None;
+        self.encrypted_access_token = None;
+        save_toml_secure(self, path)?;
+
+        let secret_path = access_token_secret_path(path);
+        match fs::remove_file(secret_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Clears the locally persisted owner bearer token from the default config path.
+    pub fn clear_owner_session_default(&mut self) -> Result<(), ConfigError> {
+        self.clear_owner_session(&config_path()?)
     }
 
     /// Resolves the configured API URL or falls back to the default public endpoint.
@@ -235,19 +254,14 @@ pub fn config_dir() -> Result<PathBuf, ConfigError> {
         .ok_or(ConfigError::MissingHomeDirectory("CLI storage"))
 }
 
-/// Returns the local agent profile directory path.
-pub fn agents_dir() -> Result<PathBuf, ConfigError> {
-    config_dir()
-}
-
 /// Returns the default config file path.
 pub fn config_path() -> Result<PathBuf, ConfigError> {
     Ok(config_dir()?.join("config.toml"))
 }
 
-/// Returns the default agent registry path.
-pub fn agents_path() -> Result<PathBuf, ConfigError> {
-    Ok(agents_dir()?.join("agents.toml"))
+/// Returns the default local passport registry path.
+pub fn passports_path() -> Result<PathBuf, ConfigError> {
+    Ok(config_dir()?.join("passports.toml"))
 }
 
 #[cfg(test)]
@@ -364,5 +378,102 @@ access_token = "legacy_token_123"
             .collect::<Vec<_>>();
         entries.sort();
         assert_eq!(entries, vec!["config.toml".to_string()]);
+    }
+
+    #[test]
+    fn clear_owner_session_on_nonexistent_config_creates_empty_config() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut conf = CliConfig::default();
+        conf.clear_owner_session(&path).unwrap();
+
+        let loaded = CliConfig::load(&path).unwrap();
+        assert!(loaded.access_token.is_none());
+        assert!(loaded.encrypted_access_token.is_none());
+        assert!(loaded.api_url.is_none());
+    }
+
+    #[test]
+    fn clear_owner_session_preserves_api_url_and_default_chain() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut conf = CliConfig {
+            access_token: Some("secret_token".to_string()),
+            api_url: Some("https://api.custom.test".to_string()),
+            default_chain: Some("eip155:1".to_string()),
+            encrypted_access_token: None,
+        };
+
+        conf.save(&path).unwrap();
+        conf.clear_owner_session(&path).unwrap();
+
+        let loaded = CliConfig::load(&path).unwrap();
+        assert!(loaded.access_token.is_none());
+        assert_eq!(loaded.api_url.as_deref(), Some("https://api.custom.test"));
+        assert_eq!(loaded.default_chain.as_deref(), Some("eip155:1"));
+    }
+
+    #[test]
+    fn clear_owner_session_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut conf = CliConfig {
+            access_token: Some("token".to_string()),
+            api_url: None,
+            default_chain: None,
+            encrypted_access_token: None,
+        };
+        conf.save(&path).unwrap();
+
+        conf.clear_owner_session(&path).unwrap();
+        conf.clear_owner_session(&path).unwrap(); // second call should succeed
+
+        let loaded = CliConfig::load(&path).unwrap();
+        assert!(loaded.access_token.is_none());
+    }
+
+    #[test]
+    fn resolved_api_url_returns_default_when_none() {
+        let conf = CliConfig::default();
+        assert_eq!(conf.resolved_api_url(), DEFAULT_API_URL);
+    }
+
+    #[test]
+    fn resolved_api_url_returns_custom_when_set() {
+        let conf = CliConfig {
+            api_url: Some("https://custom.api.test".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(conf.resolved_api_url(), "https://custom.api.test");
+    }
+
+    #[test]
+    fn clear_owner_session_removes_encrypted_token_and_secret() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut conf = CliConfig {
+            access_token: Some("test_token_123".to_string()),
+            api_url: Some("https://api.example.test".to_string()),
+            default_chain: Some("eip155:8453".to_string()),
+            encrypted_access_token: None,
+        };
+
+        conf.save(&path).unwrap();
+        assert!(dir.path().join("access-token.secret").exists());
+
+        conf.clear_owner_session(&path).unwrap();
+
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("encrypted_access_token"));
+        assert!(!dir.path().join("access-token.secret").exists());
+
+        let loaded = CliConfig::load(&path).unwrap();
+        assert!(loaded.access_token.is_none());
+        assert!(loaded.encrypted_access_token.is_none());
+        assert_eq!(loaded.api_url.as_deref(), Some("https://api.example.test"));
     }
 }

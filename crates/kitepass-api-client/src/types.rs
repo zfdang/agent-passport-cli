@@ -59,6 +59,11 @@ pub struct AuthPollResponse {
     pub error: Option<String>,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+pub struct StatusResponse {
+    pub status: String,
+}
+
 #[derive(Serialize, Debug)]
 pub struct ImportSessionRequest {
     pub chain_family: ChainFamily,

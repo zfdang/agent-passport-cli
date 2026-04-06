@@ -143,9 +143,12 @@ WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"</code></pre>
               </div>
               <pre id="code-provision"><code>POLICY_JSON="$(kitepass --json passport-policy create --wallet-id "$WALLET_ID" --allowed-chain eip155:8453 --allowed-action transaction --max-single-amount 100)"
 POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.passport_policy_id')"
+kitepass --json passport-policy activate --passport-policy-id "$POLICY_ID"
 
-PASSPORT_JSON="$(kitepass --json passport create --name trading-bot --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
-PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"</code></pre>
+PASSPORT_JSON="$(kitepass --json passport create --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
+PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"
+export KITE_PASSPORT_TOKEN="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_token')"
+kitepass --json logout</code></pre>
             </div>
 
             <div class="example-panel" data-example-panel="sign">
@@ -257,15 +260,15 @@ PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"</code></pre
               <article class="workflow-step">
                 <span>04</span>
                 <div>
-                  <h3>Create policy, create passport, export token</h3>
-                  <p>Create and activate the Passport Policy, mint the Agent Passport bound to that wallet, and hand off the one-time Passport Token through your runtime secret path.</p>
+                  <h3>Create policy, create passport, export token, log out owner</h3>
+                  <p>Create and activate the Passport Policy, mint the Agent Passport, export the one-time Passport Token, and clear the owner session before handing off runtime use.</p>
                 </div>
               </article>
               <article class="workflow-step">
                 <span>05</span>
                 <div>
                   <h3>Sign with Passport Token</h3>
-                  <p>Use the Passport Token plus the stored local encrypted profile to validate, sign, and optionally broadcast the delegated operation.</p>
+                  <p>Use the Passport Token plus the stored local encrypted passport record to validate, sign, and optionally broadcast the delegated operation.</p>
                 </div>
               </article>
             </div>
@@ -317,7 +320,7 @@ echo "wallet_id=${WALLET_ID}"</code></pre>
 
             <div class="code-stack">
               <div class="code-toolbar">
-                <span>4. Create policy, create passport, export token</span>
+                <span>4. Create policy, create passport, export token, log out owner</span>
                 <button class="copy-button" type="button" data-copy-target="code-quickstart-provision">
                   Copy
                 </button>
@@ -326,11 +329,11 @@ echo "wallet_id=${WALLET_ID}"</code></pre>
 POLICY_ID="$(printf '%s' "$POLICY_JSON" | jq -r '.passport_policy_id')"
 kitepass --json passport-policy activate --passport-policy-id "$POLICY_ID"
 
-PASSPORT_JSON="$(kitepass --json passport create --name trading-bot --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
+PASSPORT_JSON="$(kitepass --json passport create --wallet-id "$WALLET_ID" --passport-policy-id "$POLICY_ID")"
 PASSPORT_ID="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_id')"
 export KITE_PASSPORT_TOKEN="$(printf '%s' "$PASSPORT_JSON" | jq -r '.passport_token')"
-
-echo "passport_id=${PASSPORT_ID}"</code></pre>
+echo "passport_id=${PASSPORT_ID}"
+kitepass --json logout</code></pre>
             </div>
 
             <div class="code-stack">
@@ -345,8 +348,8 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
 
             <p class="quickstart-note">
               This quickstart uses <code>jq</code> to extract IDs and the one-time Passport Token.
-              Wallet import currently supports the EVM chain family, and signing modes require
-              <code>KITE_PASSPORT_TOKEN</code>.
+              Wallet import currently supports the EVM chain family, signing modes require
+              <code>KITE_PASSPORT_TOKEN</code>, and the owner can log out immediately after step 4.
             </p>
           </article>
         </section>
@@ -364,8 +367,8 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
           <div class="command-grid">
             <article class="command-card">
               <p class="command-label">Identity</p>
-              <h3>kitepass login</h3>
-              <p>Authenticate the owner via passkey device-code flow and bootstrap the local Principal Account session.</p>
+              <h3>kitepass login / logout</h3>
+              <p>Authenticate the owner via passkey device-code flow, then clear the local Principal Account session once provisioning is complete.</p>
             </article>
             <article class="command-card">
               <p class="command-label">Wallets</p>
@@ -383,9 +386,9 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
               <p>Provision Agent Passports with bound wallet + policy, and rotate or revoke them.</p>
             </article>
             <article class="command-card">
-              <p class="command-label">Profiles</p>
-              <h3>profile list / use / delete</h3>
-              <p>Switch between local encrypted agent profiles without exposing plaintext keys.</p>
+              <p class="command-label">Local keys</p>
+              <h3>passport local list / delete</h3>
+              <p>Inspect or delete local encrypted passport-key records without exposing plaintext signing keys.</p>
             </article>
             <article class="command-card">
               <p class="command-label">Signing + Audit</p>
@@ -415,17 +418,17 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
                 </p>
               </article>
               <article class="security-card">
-                <h3>Local encrypted agent profile</h3>
+                <h3>Local encrypted passport key</h3>
                 <p>
                   The agent private key stays on disk only as an inline <code>CryptoEnvelope</code> inside
-                  <code>~/.kitepass/agents.toml</code>.
+                  <code>~/.kitepass/passports.toml</code>.
                 </p>
               </article>
               <article class="security-card">
                 <h3>One-time Passport Token</h3>
                 <p>
                   Contains <code>passport_id</code> plus a secret used only to unlock the local encrypted
-                  profile. The token itself is not stored on disk by the CLI.
+                  passport record. The token itself is not stored on disk by the CLI.
                 </p>
               </article>
               <article class="security-card">
@@ -454,8 +457,8 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
                 <p>The local secret used to decrypt the stored Principal Account session.</p>
               </article>
               <article>
-                <code>agents.toml</code>
-                <p>Encrypted agent profiles with <code>passport_id</code>, public key metadata, and inline envelopes.</p>
+                <code>passports.toml</code>
+                <p>Encrypted local passport records with <code>passport_id</code>, public key metadata, and inline envelopes.</p>
               </article>
             </div>
 
@@ -497,7 +500,7 @@ echo "passport_id=${PASSPORT_ID}"</code></pre>
             <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/agent-security-design.md">
               <span class="resource-kicker">Security</span>
               <h3>Agent security design</h3>
-              <p>Passport Token format, encrypted profile model, and local signing behavior.</p>
+              <p>Passport Token format, local passport-record model, and runtime signing behavior.</p>
             </a>
             <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/security-wallet-import.md">
               <span class="resource-kicker">Custody</span>

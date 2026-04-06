@@ -1,11 +1,11 @@
-use crate::commands::{load_agent_registry, load_cli_config};
+use crate::commands::{load_cli_config, load_local_passport_registry};
 use crate::runtime::Runtime;
 use anyhow::{bail, Context, Result};
 use kitepass_api_client::{
     AgentProof, CreateSessionChallengeRequest, CreateSessionRequest, PassportClient, SignRequest,
     SigningMode, ValidateAgentProof, ValidateSignIntentRequest,
 };
-use kitepass_config::{env_passport_token, AgentRegistry, PASSPORT_TOKEN_ENV};
+use kitepass_config::{env_passport_token, LocalPassportRegistry, PASSPORT_TOKEN_ENV};
 use kitepass_crypto::agent_key::AgentKey;
 use kitepass_crypto::encryption::PassportToken;
 use serde::Serialize;
@@ -172,14 +172,10 @@ fn sign_hex(agent_key: &AgentKey, message: &[u8]) -> String {
 
 struct ResolvedSigner {
     passport_id: String,
-    profile_name: String,
     agent_key: AgentKey,
 }
 
-fn resolve_validate_passport_id(
-    cli_passport_id: Option<String>,
-    registry: &AgentRegistry,
-) -> Result<String> {
+fn resolve_validate_passport_id(cli_passport_id: Option<String>) -> Result<String> {
     if let Some(passport_id) = cli_passport_id {
         return Ok(passport_id);
     }
@@ -190,16 +186,18 @@ fn resolve_validate_passport_id(
         return Ok(token.passport_id);
     }
 
-    Ok(registry.resolve_active_agent()?.passport_id)
+    bail!(
+        "`kitepass sign --validate` requires `--passport-id` when KITE_PASSPORT_TOKEN is not set."
+    )
 }
 
 fn resolve_signer(
     cli_passport_id: Option<String>,
-    registry: &AgentRegistry,
+    registry: &LocalPassportRegistry,
 ) -> Result<ResolvedSigner> {
     let token_str = env_passport_token().with_context(|| {
         format!(
-            "`kitepass sign` requires {PASSPORT_TOKEN_ENV} because local agent keys are stored as encrypted envelopes in `~/.kitepass/agents.toml`."
+            "`kitepass sign` requires {PASSPORT_TOKEN_ENV} because local agent keys are stored as encrypted envelopes in `~/.kitepass/passports.toml`."
         )
     })?;
     let token = PassportToken::parse(&token_str)
@@ -219,7 +217,7 @@ fn resolve_signer(
         .cloned()
         .with_context(|| {
             format!(
-                "No local encrypted agent profile found for passport_id `{}`. Recreate it on this machine with `kitepass passport create --name <profile>` or sync `~/.kitepass/agents.toml`.",
+                "No local encrypted passport key found for passport_id `{}`. Recreate it on this machine with `kitepass passport create` or sync `~/.kitepass/passports.toml`.",
                 token.passport_id
             )
         })?;
@@ -229,7 +227,7 @@ fn resolve_signer(
         .decrypt(token.secret_key.as_str())
         .with_context(|| {
             format!(
-                "Failed to decrypt the local agent key for passport_id `{}`. Check that {PASSPORT_TOKEN_ENV} matches the profile created on this machine.",
+                "Failed to decrypt the local passport key for passport_id `{}`. Check that {PASSPORT_TOKEN_ENV} matches the passport created on this machine.",
                 token.passport_id
             )
         })?;
@@ -239,7 +237,6 @@ fn resolve_signer(
 
     Ok(ResolvedSigner {
         passport_id: token.passport_id,
-        profile_name: identity.name,
         agent_key,
     })
 }
@@ -265,7 +262,8 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
     let api_url = config.resolved_api_url();
     let client =
         PassportClient::new(api_url).context("Failed to initialize Passport API client")?;
-    let registry = load_agent_registry().context("Failed to load local agent registry")?;
+    let registry =
+        load_local_passport_registry().context("Failed to load local passport registry")?;
 
     if args.validate {
         // Validate mode: check routing and policy without returning a final signature.
@@ -308,7 +306,7 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
             let owner_client = PassportClient::new(api_url)
                 .context("Failed to initialize Passport API client")?
                 .with_token(token);
-            let passport_id = resolve_validate_passport_id(args.passport_id, &registry)?;
+            let passport_id = resolve_validate_passport_id(args.passport_id)?;
             owner_client
                 .validate_sign_intent(&ValidateSignIntentRequest {
                     request_id,
@@ -347,7 +345,6 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
                 "destination": args.destination,
                 "value": args.value,
                 "mode": mode_name,
-                "profile_name": resolved_signer.profile_name,
                 "private_key_storage": "encrypted_inline",
                 "passport_token_env": PASSPORT_TOKEN_ENV,
             }))?;
@@ -459,6 +456,100 @@ pub async fn run(args: SignArgs, runtime: &Runtime) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payload_hash_is_sha256_hex() {
+        let hash = payload_hash("0xdeadbeef");
+        assert!(hash.starts_with("0x"));
+        assert_eq!(hash.len(), 2 + 64); // 0x + 32 bytes hex
+    }
+
+    #[test]
+    fn payload_hash_is_deterministic() {
+        assert_eq!(payload_hash("test"), payload_hash("test"));
+        assert_ne!(payload_hash("a"), payload_hash("b"));
+    }
+
+    #[test]
+    fn wallet_selector_for_none_returns_auto() {
+        assert_eq!(wallet_selector_for(&None), Some("auto".to_string()));
+    }
+
+    #[test]
+    fn wallet_selector_for_some_returns_none() {
+        assert_eq!(wallet_selector_for(&Some("wal_123".to_string())), None);
+    }
+
+    #[test]
+    fn signing_mode_default_is_signature_only() {
+        let (mode, name) = signing_mode(false);
+        assert!(matches!(mode, SigningMode::SignatureOnly));
+        assert_eq!(name, "signature_only");
+    }
+
+    #[test]
+    fn signing_mode_broadcast_is_sign_and_submit() {
+        let (mode, name) = signing_mode(true);
+        assert!(matches!(mode, SigningMode::SignAndSubmit));
+        assert_eq!(name, "sign_and_submit");
+    }
+
+    #[test]
+    fn canonical_validate_message_includes_type_and_version() {
+        let message = canonical_validate_message(&CanonicalValidateIntent {
+            request_id: "req_123",
+            passport_id: "agp_123",
+            wallet_id: Some("wal_123"),
+            wallet_selector: None,
+            chain_id: "eip155:8453",
+            signing_type: "transaction",
+            payload: "0xdeadbeef",
+            destination: "0xabc",
+            value: "10",
+        })
+        .expect("should canonicalize");
+
+        let canonical = String::from_utf8(message).expect("should be utf-8");
+        assert!(canonical.contains("\"type\":\"validate_sign_intent\""));
+        assert!(canonical.contains("\"version\":1"));
+        assert!(canonical.contains("\"passport_id\":\"agp_123\""));
+    }
+
+    #[test]
+    fn canonical_validate_message_omits_null_wallet_id() {
+        let message = canonical_validate_message(&CanonicalValidateIntent {
+            request_id: "req_123",
+            passport_id: "agp_123",
+            wallet_id: None,
+            wallet_selector: Some("auto"),
+            chain_id: "eip155:8453",
+            signing_type: "transaction",
+            payload: "0xdeadbeef",
+            destination: "0xabc",
+            value: "10",
+        })
+        .expect("should canonicalize");
+
+        let canonical = String::from_utf8(message).expect("should be utf-8");
+        assert!(!canonical.contains("wallet_id"));
+        assert!(canonical.contains("\"wallet_selector\":\"auto\""));
+    }
+
+    #[test]
+    fn canonical_session_create_message_includes_challenge() {
+        let message = canonical_session_create_message(&CanonicalSessionCreate {
+            request_id: "req_sess",
+            passport_id: "agp_123",
+            challenge_id: "sch_456",
+            challenge_nonce: "nonce_789",
+        })
+        .expect("should canonicalize");
+
+        let canonical = String::from_utf8(message).expect("should be utf-8");
+        assert!(canonical.contains("\"type\":\"create_session\""));
+        assert!(canonical.contains("\"challenge_id\":\"sch_456\""));
+        assert!(canonical.contains("\"challenge_nonce\":\"nonce_789\""));
+    }
 
     #[test]
     fn canonical_agent_message_uses_requested_mode() {

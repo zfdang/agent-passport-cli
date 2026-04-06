@@ -1,9 +1,9 @@
 pub mod audit;
 pub mod login;
+pub mod logout;
 pub mod operations;
 pub mod passport;
 pub mod passport_policy;
-pub mod profile;
 pub mod sign;
 pub mod wallet;
 pub mod wallet_import;
@@ -11,14 +11,14 @@ pub mod wallet_import;
 use crate::cli::{Cli, Command};
 use crate::runtime::Runtime;
 use anyhow::Result;
-use kitepass_config::{AgentRegistry, CliConfig};
+use kitepass_config::{CliConfig, LocalPassportRegistry};
 
 pub(crate) fn load_cli_config() -> Result<CliConfig> {
     Ok(CliConfig::load_default()?)
 }
 
-pub(crate) fn load_agent_registry() -> Result<AgentRegistry> {
-    Ok(AgentRegistry::load_default()?)
+pub(crate) fn load_local_passport_registry() -> Result<LocalPassportRegistry> {
+    Ok(LocalPassportRegistry::load_default()?)
 }
 
 pub async fn dispatch(cli: Cli) -> Result<()> {
@@ -26,10 +26,10 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
 
     match cli.command {
         Command::Login => login::run(&runtime).await,
+        Command::Logout => logout::run(&runtime).await,
         Command::Wallet { action } => wallet::run(action, &runtime).await,
         Command::Passport { action } => passport::run(action, &runtime).await,
         Command::PassportPolicy { action } => passport_policy::run(action, &runtime).await,
-        Command::Profile { action } => profile::run(action, &runtime).await,
         Command::Sign {
             validate,
             broadcast,
