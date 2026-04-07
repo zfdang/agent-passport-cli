@@ -14,11 +14,11 @@ const MAX_DEVICE_CODE_TIMEOUT_SECS: u64 = 600;
 const MAX_DEVICE_CODE_ERROR_BACKOFF_SECS: u64 = 30;
 
 fn generate_pkce_verifier() -> Result<String> {
-    let mut bytes = [0u8; 32];
+    let mut bytes = Zeroizing::new([0u8; 32]);
     OsRng
-        .try_fill_bytes(&mut bytes)
+        .try_fill_bytes(bytes.as_mut())
         .context("failed to read secure randomness for PKCE verifier")?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
+    Ok(URL_SAFE_NO_PAD.encode(&*bytes))
 }
 
 fn pkce_s256_challenge(code_verifier: &str) -> String {
