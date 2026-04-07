@@ -1266,7 +1266,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         .and(path("/v1/signatures"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "request_id": "req_mock_123",
-            "status": "submitted",
+            "status": "pending",
             "signature": "0xsigned",
             "enclave_receipt": "0xreceipt",
             "operation_id": "op_123",
@@ -1298,7 +1298,7 @@ async fn sign_broadcast_renders_json_output_and_sends_agent_proof() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"status\": \"submitted\""))
+        .stdout(contains("\"status\": \"pending\""))
         .stdout(contains("\"operation_id\": \"op_123\""));
 
     let requests = mock_server
@@ -1459,7 +1459,7 @@ async fn sign_uses_token_bound_local_passport_when_flags_are_omitted() {
         .and(path("/v1/signatures"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "request_id": "req_mock_profile",
-            "status": "submitted",
+            "status": "pending",
             "signature": "0xsigned",
             "enclave_receipt": "0xreceipt",
             "operation_id": "op_profile",
@@ -1489,7 +1489,7 @@ async fn sign_uses_token_bound_local_passport_when_flags_are_omitted() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"status\": \"submitted\""))
+        .stdout(contains("\"status\": \"pending\""))
         .stdout(contains("\"operation_id\": \"op_profile\""));
 
     let requests = mock_server

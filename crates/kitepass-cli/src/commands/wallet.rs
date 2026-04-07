@@ -113,6 +113,15 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
             let aad_bytes =
                 serde_json::to_vec(&aad).context("Failed to serialize import channel binding")?;
 
+            // Validate wallet secret format before HPKE encryption
+            let trimmed = wallet_secret.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("wallet secret must not be empty");
+            }
+            if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                anyhow::bail!("wallet secret must be valid hex (0-9, a-f, A-F)");
+            }
+
             // 3. Encrypt Envelope
             let sealed = seal_to_hex(
                 &attestation.import_public_key,
