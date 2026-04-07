@@ -113,13 +113,13 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
             let aad_bytes =
                 serde_json::to_vec(&aad).context("Failed to serialize import channel binding")?;
 
-            // Validate wallet secret format before HPKE encryption
-            let trimmed = wallet_secret.trim();
-            if trimmed.is_empty() {
+            // Normalize and validate wallet secret before HPKE encryption.
+            // The vault-signer accepts raw 32-byte keys or hex strings (with
+            // optional 0x prefix), so we send the trimmed input as-is and let
+            // the vault-signer handle final normalization.
+            let normalized_secret = wallet_secret.trim().to_string();
+            if normalized_secret.is_empty() {
                 anyhow::bail!("wallet secret must not be empty");
-            }
-            if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-                anyhow::bail!("wallet secret must be valid hex (0-9, a-f, A-F)");
             }
 
             // 3. Encrypt Envelope
@@ -127,7 +127,7 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 &attestation.import_public_key,
                 &hpke_info,
                 &aad_bytes,
-                wallet_secret.as_bytes(),
+                normalized_secret.as_bytes(),
             )
             .context("Failed to HPKE-encrypt wallet secret")?;
 
