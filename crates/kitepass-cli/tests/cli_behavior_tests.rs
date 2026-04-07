@@ -1,8 +1,8 @@
 use assert_cmd::Command;
 use kitepass_config::{CliConfig, LocalPassportRecord, LocalPassportRegistry};
 use kitepass_crypto::agent_key::AgentKey;
+use kitepass_crypto::capsule_encrypt::{generate_test_p384_keypair, IMPORT_ENCRYPTION_SCHEME};
 use kitepass_crypto::encryption::{CryptoEnvelope, PassportToken};
-use kitepass_crypto::hpke::{generate_recipient_keypair, IMPORT_ENCRYPTION_SCHEME};
 use predicates::str::contains;
 use std::fs;
 use tempfile::TempDir;
@@ -1111,8 +1111,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
     let mock_server = MockServer::start().await;
     write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
-
-    let vault_keypair = generate_recipient_keypair();
+    let (_, test_pub_key) = generate_test_p384_keypair();
 
     Mock::given(method("POST"))
         .and(path("/v1/wallets/import-sessions"))
@@ -1178,7 +1177,7 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
                 }
             }).to_string(),
             "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
-            "import_public_key": vault_keypair.public_key_hex,
+            "import_public_key": &test_pub_key,
             "endpoint_binding": "binding_dev"
         })))
         .mount(&mock_server)
@@ -1238,16 +1237,23 @@ async fn wallet_import_reads_secret_from_stdin_and_uploads_ciphertext() {
     assert_eq!(upload_body["aad"]["request_id"], "req_dev");
     assert_eq!(upload_body["aad"]["vault_signer_instance_id"], "vs_dev_1");
     assert!(
-        upload_body["encapsulated_key"]
+        upload_body["client_public_key_der_hex"]
             .as_str()
-            .expect("encapsulated key should be string")
+            .expect("client_public_key_der_hex should be string")
             .len()
             > 10
     );
     assert!(
-        upload_body["ciphertext"]
+        upload_body["nonce_hex"]
             .as_str()
-            .expect("ciphertext should be string")
+            .expect("nonce_hex should be string")
+            .len()
+            > 2
+    );
+    assert!(
+        upload_body["encrypted_data_hex"]
+            .as_str()
+            .expect("encrypted_data_hex should be string")
             .len()
             > 10
     );

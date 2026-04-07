@@ -3,7 +3,7 @@ use kitepass_api_client::{
     DeviceCodeRequest, ImportAad, PassportClient, SignRequest, SigningMode,
     UploadWalletCiphertextRequest, ValidateAgentProof, ValidateSignIntentRequest,
 };
-use kitepass_crypto::hpke::{generate_recipient_keypair, seal_to_hex, IMPORT_ENCRYPTION_SCHEME};
+use kitepass_crypto::capsule_encrypt::{generate_test_p384_keypair, IMPORT_ENCRYPTION_SCHEME};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -52,8 +52,7 @@ async fn test_login_device_flow() {
 #[tokio::test]
 async fn test_wallet_hybrid_import() {
     let mock_server = MockServer::start().await;
-
-    let vault_keypair = generate_recipient_keypair();
+    let (_, test_pub_key) = generate_test_p384_keypair();
 
     Mock::given(method("POST"))
         .and(path("/v1/wallets/import-sessions"))
@@ -119,7 +118,7 @@ async fn test_wallet_hybrid_import() {
                 }
             }).to_string(),
             "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
-            "import_public_key": vault_keypair.public_key_hex,
+            "import_public_key": &test_pub_key,
             "endpoint_binding": "binding_dev"
         })))
         .mount(&mock_server)
@@ -160,38 +159,15 @@ async fn test_wallet_hybrid_import() {
         request_id: session_res.channel_binding.request_id.clone(),
         vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
     };
-    let info = serde_json::to_vec(&serde_json::json!({
-        "document_version": 1,
-        "import_session_id": session_res.session_id,
-        "vault_signer_instance_id": session_res.vault_signer_instance_id,
-        "endpoint_binding": attestation.endpoint_binding,
-        "public_api_scope": "wallet_import_attestation",
-        "authorization_model": "dual_sign_authorization_tee_signer",
-        "import_encryption_scheme": IMPORT_ENCRYPTION_SCHEME,
-        "measurement_profile_id": "aws-nitro-dev-v1",
-        "measurement_profile_version": 1,
-        "reviewed_build_id": "vault-signer-dev-reviewed-build-v1",
-        "reviewed_build_digest": "sha256:dev-reviewed-build-v1",
-        "build_source": "apps/vault-signer",
-        "security_model_ref": "docs/public-security-model.md#attestation-auditability"
-    }))
-    .unwrap();
-    let aad_bytes = serde_json::to_vec(&aad).unwrap();
-    let sealed = seal_to_hex(
-        &attestation.import_public_key,
-        &info,
-        &aad_bytes,
-        b"4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7",
-    )
-    .unwrap();
 
     let import_res = client
         .upload_wallet_ciphertext(
             &session_res.session_id,
             &UploadWalletCiphertextRequest {
                 vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
-                encapsulated_key: sealed.encapsulated_key_hex,
-                ciphertext: sealed.ciphertext_hex,
+                client_public_key_der_hex: "0xdummyclientpubkey".to_string(),
+                nonce_hex: "0xdummynonce".to_string(),
+                encrypted_data_hex: "0xdummyencrypteddata".to_string(),
                 aad,
             },
         )

@@ -1,9 +1,9 @@
 use crate::commands::load_cli_config;
-use crate::commands::wallet_import::{build_import_hpke_info, verify_import_attestation};
+use crate::commands::wallet_import::verify_import_attestation;
 use crate::{cli::WalletAction, error::CliError, runtime::Runtime};
 use anyhow::{Context, Result};
 use kitepass_api_client::{ChainFamily, ImportAad, PassportClient, UploadWalletCiphertextRequest};
-use kitepass_crypto::hpke::seal_to_hex;
+use kitepass_crypto::capsule_encrypt;
 use serde_json::json;
 use tokio::task::spawn_blocking;
 use uuid::Uuid;
@@ -109,37 +109,33 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 request_id: session_res.channel_binding.request_id.clone(),
                 vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
             };
-            let hpke_info = build_import_hpke_info(&session_res, &attestation)?;
             let aad_bytes =
                 serde_json::to_vec(&aad).context("Failed to serialize import channel binding")?;
 
-            // Normalize and validate wallet secret before HPKE encryption.
-            // The vault-signer accepts raw 32-byte keys or hex strings (with
-            // optional 0x prefix), so we send the trimmed input as-is and let
-            // the vault-signer handle final normalization.
+            // Normalize and validate wallet secret before encryption.
             let normalized_secret = wallet_secret.trim().to_string();
             if normalized_secret.is_empty() {
                 anyhow::bail!("wallet secret must not be empty");
             }
 
-            // 3. Encrypt Envelope
-            let sealed = seal_to_hex(
+            // 3. Encrypt to Capsule's attestation-bound P-384 public key
+            let envelope = capsule_encrypt::encrypt_to_capsule(
                 &attestation.import_public_key,
-                &hpke_info,
                 &aad_bytes,
                 normalized_secret.as_bytes(),
             )
-            .context("Failed to HPKE-encrypt wallet secret")?;
+            .context("Failed to encrypt wallet secret to Capsule public key")?;
 
-            // 4. Upload Ciphertext
+            // 4. Upload encrypted envelope
             runtime.progress("Uploading encrypted envelope to Passport Gateway...");
             let upload_res = client
                 .upload_wallet_ciphertext(
                     &session_res.session_id,
                     &UploadWalletCiphertextRequest {
                         vault_signer_instance_id: session_res.vault_signer_instance_id.clone(),
-                        encapsulated_key: sealed.encapsulated_key_hex,
-                        ciphertext: sealed.ciphertext_hex,
+                        client_public_key_der_hex: envelope.client_public_key_der_hex,
+                        nonce_hex: envelope.nonce_hex,
+                        encrypted_data_hex: envelope.encrypted_data_hex,
                         aad,
                     },
                 )

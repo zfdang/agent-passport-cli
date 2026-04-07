@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use kitepass_api_client::{ImportAttestationResponse, ImportSessionResponse};
-use kitepass_crypto::hpke::IMPORT_ENCRYPTION_SCHEME;
-use serde::{Deserialize, Serialize};
+use kitepass_crypto::capsule_encrypt::IMPORT_ENCRYPTION_SCHEME;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct AttestationBundleDocument {
@@ -28,48 +28,6 @@ struct AttestationUserData {
     security_model_ref: String,
 }
 
-#[derive(Debug, Serialize)]
-struct ImportHpkeInfo<'a> {
-    document_version: u32,
-    import_session_id: &'a str,
-    vault_signer_instance_id: &'a str,
-    endpoint_binding: &'a str,
-    public_api_scope: &'a str,
-    authorization_model: &'a str,
-    import_encryption_scheme: &'a str,
-    measurement_profile_id: &'a str,
-    measurement_profile_version: u32,
-    reviewed_build_id: &'a str,
-    reviewed_build_digest: &'a str,
-    build_source: &'a str,
-    security_model_ref: &'a str,
-}
-
-pub fn build_import_hpke_info(
-    session: &ImportSessionResponse,
-    attestation: &ImportAttestationResponse,
-) -> Result<Vec<u8>> {
-    serde_json::to_vec(&ImportHpkeInfo {
-        document_version: 1,
-        import_session_id: &session.session_id,
-        vault_signer_instance_id: &session.vault_signer_instance_id,
-        endpoint_binding: &attestation.endpoint_binding,
-        public_api_scope: "wallet_import_attestation",
-        authorization_model: &session.vault_signer_identity.authorization_model,
-        import_encryption_scheme: &session.import_encryption_scheme,
-        measurement_profile_id: &session.vault_signer_identity.measurement_profile.profile_id,
-        measurement_profile_version: session.vault_signer_identity.measurement_profile.version,
-        reviewed_build_id: &session.vault_signer_identity.reviewed_build.build_id,
-        reviewed_build_digest: &session.vault_signer_identity.reviewed_build.build_digest,
-        build_source: &session.vault_signer_identity.reviewed_build.build_source,
-        security_model_ref: &session
-            .vault_signer_identity
-            .reviewed_build
-            .security_model_ref,
-    })
-    .context("Failed to serialize HPKE import info")
-}
-
 pub fn verify_import_attestation(
     session: &ImportSessionResponse,
     attestation: &ImportAttestationResponse,
@@ -87,7 +45,10 @@ pub fn verify_import_attestation(
     if session.import_encryption_scheme != IMPORT_ENCRYPTION_SCHEME
         || attestation.import_encryption_scheme != IMPORT_ENCRYPTION_SCHEME
     {
-        anyhow::bail!("Vault Signer import encryption scheme did not match HPKE v1");
+        anyhow::bail!(
+            "Vault Signer import encryption scheme mismatch (expected {})",
+            IMPORT_ENCRYPTION_SCHEME
+        );
     }
 
     if session.vault_signer_identity.instance_id != session.vault_signer_instance_id {
@@ -173,7 +134,7 @@ mod tests {
         ChannelBinding, ExpectedMeasurements, ImportAttestationResponse, ImportSessionResponse,
         MeasurementProfile, ReviewedBuild, VaultSignerIdentity,
     };
-    use kitepass_crypto::hpke::IMPORT_ENCRYPTION_SCHEME;
+    use kitepass_crypto::capsule_encrypt::IMPORT_ENCRYPTION_SCHEME;
 
     fn sample_session() -> ImportSessionResponse {
         ImportSessionResponse {
