@@ -130,7 +130,7 @@ kitepass --version</code></pre>
               </div>
               <pre id="code-setup"><code>kitepass login
 
-WALLET_JSON="$(printf '<evm-private-key-hex>\n' | kitepass --json wallet import --chain-family evm --name treasury)"
+WALLET_JSON="$(printf '%s' '<evm-private-key-hex>' | kitepass --json wallet import --chain-family evm --name treasury)"
 WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"</code></pre>
             </div>
 
@@ -313,7 +313,7 @@ kitepass --version</code></pre>
                   Copy
                 </button>
               </div>
-              <pre id="code-quickstart-wallet"><code>WALLET_JSON="$(printf '<evm-private-key-hex>\n' | kitepass --json wallet import --chain-family evm --name treasury)"
+              <pre id="code-quickstart-wallet"><code>WALLET_JSON="$(printf '%s' '<evm-private-key-hex>' | kitepass --json wallet import --chain-family evm --name treasury)"
 WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"
 echo "wallet_id=${WALLET_ID}"</code></pre>
             </div>

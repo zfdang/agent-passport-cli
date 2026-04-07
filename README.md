@@ -66,7 +66,7 @@ In the current implementation, the CLI stores:
 
 ```bash
 WALLET_JSON="$(
-  printf '%s\n' '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7' | \
+  printf '%s' '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7' | \
     kitepass --json wallet import --chain-family evm --name "Demo Wallet"
 )"
 
