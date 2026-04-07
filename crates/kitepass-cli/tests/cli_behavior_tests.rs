@@ -90,6 +90,51 @@ fn cli_command(tempdir: &TempDir) -> Command {
 }
 
 #[test]
+fn status_shows_not_logged_in_without_session() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+
+    cli_command(&tempdir)
+        .args(["--json", "status"])
+        .assert()
+        .success()
+        .stdout(contains("\"logged_in\": false"))
+        .stdout(contains("\"api_url\":"))
+        .stdout(contains("\"local_passport_keys\": 0"))
+        .stdout(contains("\"config_dir\":"));
+}
+
+#[tokio::test]
+async fn status_shows_logged_in_with_session() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+    let mock_server = MockServer::start().await;
+    write_config(&tempdir, Some(&mock_server.uri()), Some("principal-token"));
+    write_passports(
+        &tempdir,
+        &LocalPassportRegistry {
+            passports: vec![encrypted_passport("agp_one"), encrypted_passport("agp_two")],
+        },
+    );
+
+    cli_command(&tempdir)
+        .args(["--json", "status"])
+        .assert()
+        .success()
+        .stdout(contains("\"logged_in\": true"))
+        .stdout(contains("\"local_passport_keys\": 2"));
+}
+
+#[test]
+fn status_text_mode_shows_human_readable_output() {
+    let tempdir = tempfile::tempdir().expect("tempdir should exist");
+
+    cli_command(&tempdir)
+        .args(["status"])
+        .assert()
+        .success()
+        .stdout(contains("Not logged in"));
+}
+
+#[test]
 fn wallet_list_requires_login_with_stable_exit_code() {
     let tempdir = tempfile::tempdir().expect("tempdir should exist");
 

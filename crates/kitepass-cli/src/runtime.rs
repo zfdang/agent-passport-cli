@@ -44,6 +44,10 @@ impl Runtime {
         }
     }
 
+    pub fn output_format(&self) -> OutputFormat {
+        self.options.output_format
+    }
+
     pub fn dry_run_enabled(&self) -> bool {
         self.options.dry_run
     }

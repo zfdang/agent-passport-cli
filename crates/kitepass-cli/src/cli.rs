@@ -38,6 +38,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Show current session status, API endpoint, and local key inventory
+    Status,
+
     /// Authenticate as wallet owner via device-code flow
     Login,
 

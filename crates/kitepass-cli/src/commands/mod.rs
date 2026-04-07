@@ -5,6 +5,7 @@ pub mod operations;
 pub mod passport;
 pub mod passport_policy;
 pub mod sign;
+pub mod status;
 pub mod wallet;
 pub mod wallet_import;
 
@@ -25,6 +26,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
     let runtime = Runtime::from_cli(&cli);
 
     match cli.command {
+        Command::Status => status::run(&runtime),
         Command::Login => login::run(&runtime).await,
         Command::Logout => logout::run(&runtime).await,
         Command::Wallet { action } => wallet::run(action, &runtime).await,
