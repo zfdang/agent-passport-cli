@@ -29,12 +29,21 @@ Current local storage behavior:
 - `~/.kitepass/config.toml` stores API settings plus an encrypted owner access-token envelope
 - `~/.kitepass/access-token.secret` stores the local secret used to decrypt that token
 
+For a copy-paste demo flow, define these public test values once in your shell:
+
+```bash
+export TEST_EVM_PRIVATE_KEY="4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7"
+export TEST_DESTINATION="0xf17f52151EbEF6C7334FAD080c5704D77216b732"
+```
+
+These are public Ganache test values. Use them only for demos and never hold real funds.
+
 ## 3. Wallet Import
 
 Wallet import is an owner action. The CLI verifies the Vault Signer attestation, then encrypts the wallet secret to the attested Capsule runtime before upload.
 
 ```bash
-printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
+printf '%s\n' "$TEST_EVM_PRIVATE_KEY" | \
   kitepass --json wallet import --chain-family evm --name "MyTradingWallet"
 ```
 
@@ -69,7 +78,7 @@ kitepass --json passport-policy create \
   --allowed-action transaction \
   --max-single-amount 100 \
   --max-daily-amount 1000 \
-  --allowed-destination 0xabc \
+  --allowed-destination "$TEST_DESTINATION" \
   --valid-for-hours 24
 ```
 
@@ -137,7 +146,7 @@ kitepass --json sign --validate \
   --chain-id eip155:8453 \
   --signing-type transaction \
   --payload 0xdeadbeef \
-  --destination 0xabc \
+  --destination "$TEST_DESTINATION" \
   --value 10
 ```
 
@@ -156,7 +165,7 @@ KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" \
     --chain-id eip155:8453 \
     --signing-type transaction \
     --payload 0xdeadbeef \
-    --destination 0xabc \
+    --destination "$TEST_DESTINATION" \
     --value 10
 ```
 
@@ -179,7 +188,7 @@ KITE_PASSPORT_TOKEN="$KITE_PASSPORT_TOKEN" \
     --chain-id eip155:8453 \
     --signing-type transaction \
     --payload 0xdeadbeef \
-    --destination 0xabc \
+    --destination "$TEST_DESTINATION" \
     --value 10
 ```
 

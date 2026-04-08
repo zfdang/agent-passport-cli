@@ -33,8 +33,17 @@ kitepass 0.1.0 (1a2b3c4d)
 - a reachable Kitepass deployment
   - the CLI uses `https://api.kitepass.xyz` by default
 - access to a browser that can reach the Kitepass Console for owner passkey approval
-- an EVM private key in hex form for wallet import
+- an EVM private key in hex form for wallet import, or the public demo key below
 - `jq` if you want to copy-paste the shell examples below exactly
+
+For a copy-paste demo flow, define these public test values once in your shell:
+
+```bash
+export TEST_EVM_PRIVATE_KEY="4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7"
+export TEST_DESTINATION="0xf17f52151EbEF6C7334FAD080c5704D77216b732"
+```
+
+These are public Ganache test values. Use them only for demos and never hold real funds.
 
 ## End-to-End Signing Guide
 
@@ -66,7 +75,7 @@ In the current implementation, the CLI stores:
 
 ```bash
 WALLET_JSON="$(
-  printf '%s' '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7' | \
+  printf '%s' "$TEST_EVM_PRIVATE_KEY" | \
     kitepass --json wallet import --chain-family evm --name "Demo Wallet"
 )"
 
@@ -86,7 +95,7 @@ POLICY_JSON="$(
     --allowed-action transaction \
     --max-single-amount 100 \
     --max-daily-amount 1000 \
-    --allowed-destination 0xabc \
+    --allowed-destination "$TEST_DESTINATION" \
     --valid-for-hours 24
 )"
 
@@ -167,7 +176,7 @@ kitepass --json sign --validate \
   --chain-id eip155:8453 \
   --signing-type transaction \
   --payload 0xdeadbeef \
-  --destination 0xabc \
+  --destination "$TEST_DESTINATION" \
   --value 10
 ```
 
@@ -191,7 +200,7 @@ SIGN_JSON="$(
       --chain-id eip155:8453 \
       --signing-type transaction \
       --payload 0xdeadbeef \
-      --destination 0xabc \
+      --destination "$TEST_DESTINATION" \
       --value 10
 )"
 
@@ -213,7 +222,7 @@ SIGN_JSON="$(
       --chain-id eip155:8453 \
       --signing-type transaction \
       --payload 0xdeadbeef \
-      --destination 0xabc \
+      --destination "$TEST_DESTINATION" \
       --value 10
 )"
 
