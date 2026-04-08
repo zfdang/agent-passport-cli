@@ -83,7 +83,7 @@
               </article>
               <article class="metric-card">
                 <span class="metric-label">Trust boundary</span>
-                <strong>HPKE + Attestation</strong>
+                <strong>P-384 ECDH + Attestation</strong>
                 <p>Wallet secrets are encrypted locally and verified against the signer's attested build.</p>
               </article>
             </div>
@@ -186,7 +186,7 @@ kitepass --json logout</code></pre>
               <span class="feature-kicker">Wallet custody</span>
               <h3>Encrypted wallet import</h3>
               <p>
-                Import EVM keys through an HPKE-based flow that verifies attestation
+                Import EVM keys through an attestation-bound encrypted flow that verifies attestation
                 metadata before ciphertext ever leaves the terminal.
               </p>
             </article>
@@ -254,7 +254,7 @@ kitepass --json logout</code></pre>
                 <span>03</span>
                 <div>
                   <h3>Import wallet and capture <code>WALLET_ID</code></h3>
-                  <p>Verify signer attestation, HPKE-encrypt the wallet secret, and keep the returned wallet identifier for later policy and passport operations.</p>
+                  <p>Verify signer attestation, encrypt the wallet secret to the attested Capsule runtime, and keep the returned wallet identifier for later policy and passport operations.</p>
                 </div>
               </article>
               <article class="workflow-step">
@@ -505,7 +505,7 @@ kitepass --json logout</code></pre>
             <a class="resource-card" href="https://github.com/zfdang/agent-passport-cli/blob/main/docs/security-wallet-import.md">
               <span class="resource-kicker">Custody</span>
               <h3>Wallet import security</h3>
-              <p>HPKE, attestation discovery, and why wallet plaintext avoids the control plane.</p>
+              <p>Attestation-bound encryption, attestation discovery, and why wallet plaintext avoids the control plane.</p>
             </a>
             <a class="resource-card" href="https://api.kitepass.xyz">
               <span class="resource-kicker">Endpoint</span>

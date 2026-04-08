@@ -18,7 +18,7 @@ fn generate_pkce_verifier() -> Result<String> {
     OsRng
         .try_fill_bytes(bytes.as_mut())
         .context("failed to read secure randomness for PKCE verifier")?;
-    Ok(URL_SAFE_NO_PAD.encode(&*bytes))
+    Ok(URL_SAFE_NO_PAD.encode(*bytes))
 }
 
 fn pkce_s256_challenge(code_verifier: &str) -> String {

@@ -148,7 +148,7 @@ async fn test_wallet_hybrid_import() {
         .await
         .unwrap();
 
-    let attestation = client
+    let _attestation = client
         .fetch_import_attestation(&session_res.vault_signer_attestation_endpoint)
         .await
         .unwrap();

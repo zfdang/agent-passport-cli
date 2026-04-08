@@ -10,7 +10,7 @@ Implementation note as of 2026-04-03:
 
 ## How it Works
 
-The security of the wallet import flow is based on the **Hybrid Public Key Encryption (HPKE)** scheme and **Remote Attestation**.
+The security of the wallet import flow is based on **P-384 ECDH + AES-256-GCM attestation-bound encryption** and **Remote Attestation**.
 
 ### 1. Remote Attestation
 
@@ -30,15 +30,15 @@ Before you input your private key into the `kitepass-cli`, the CLI performs the 
 
 The current CLI does not treat the Gateway as a blind relay here. It checks that the Vault Signer discovery payload and the Gateway bootstrap metadata agree before continuing.
 
-### 2. HPKE-Based Encryption
+### 2. Attestation-Bound Encryption
 
-The Vault Signer generates an ephemeral X25519 public key for the import session.
+The Vault Signer provides its Capsule runtime's attestation-bound P-384 public key for the import session.
 
-- The `kitepass-cli` uses this public key to encrypt your wallet secret using **HPKE (RFC 9180)**.
+- The `kitepass-cli` uses this public key to encrypt your wallet secret using **P-384 ECDH + AES-256-GCM**.
 - Encryption occurs **locally** in your terminal's memory.
 - The CLI binds the encryption to both:
   - **AAD**, which currently includes `principal_account_id`, `principal_session_id`, `request_id`, and `vault_signer_instance_id`
-  - **HPKE info**, which currently includes `import_session_id`, `vault_signer_instance_id`, `endpoint_binding`, `authorization_model`, measurement profile data, and reviewed-build metadata
+  - **encryption info**, which currently includes `import_session_id`, `vault_signer_instance_id`, `endpoint_binding`, `authorization_model`, measurement profile data, and reviewed-build metadata
 
 ### 3. End-to-End Encryption
 

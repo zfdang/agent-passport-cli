@@ -118,6 +118,17 @@ pub async fn run(action: WalletAction, runtime: &Runtime) -> Result<()> {
                 anyhow::bail!("wallet secret must not be empty");
             }
 
+            // Validate hex format: strip optional 0x prefix, then check hex chars and length.
+            let hex_body = normalized_secret
+                .strip_prefix("0x")
+                .or_else(|| normalized_secret.strip_prefix("0X"))
+                .unwrap_or(&normalized_secret);
+            if hex_body.len() != 64 || !hex_body.chars().all(|c| c.is_ascii_hexdigit()) {
+                anyhow::bail!(
+                    "wallet secret must be a 32-byte hex string (64 hex characters, with optional 0x prefix)"
+                );
+            }
+
             // 3. Encrypt to Capsule's attestation-bound P-384 public key
             let envelope = capsule_encrypt::encrypt_to_capsule(
                 &attestation.import_public_key,

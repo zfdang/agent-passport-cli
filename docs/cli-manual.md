@@ -31,7 +31,7 @@ Current local storage behavior:
 
 ## 3. Wallet Import
 
-Wallet import is an owner action. The CLI verifies the Vault Signer attestation, then HPKE-encrypts the wallet secret before upload.
+Wallet import is an owner action. The CLI verifies the Vault Signer attestation, then encrypts the wallet secret to the attested Capsule runtime before upload.
 
 ```bash
 printf '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f9b0b7fcb7e7f6b4c7\n' | \
