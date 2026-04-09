@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>KiteAI Network</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .card {
+      max-width: 420px;
+      margin: auto;
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    img {
+      width: 80px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    p {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      background: #6366f1;
+      color: white;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background: #4f46e5;
+    }
+
+    .status {
+      margin-top: 15px;
+      font-size: 13px;
+      color: #38bdf8;
+    }
+
+    .error {
+      color: #ef4444;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+    <!-- 👉 换成你的 CDN icon -->
+    <img src="https://yourcdn.com/kite.png" alt="KiteAI Logo" />
+
+    <h1>KiteAI Mainnet</h1>
+    <p>Add the network to your wallet</p>
+
+    <button onclick="connect()">Add / Switch Network</button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    const chainConfig = {
+      chainId: '0x93E', // 2366
+      chainName: 'KiteAI Mainnet',
+      rpcUrls: ['https://rpc.gokite.ai/'],
+      nativeCurrency: {
+        name: 'KITE',
+        symbol: 'KITE',
+        decimals: 18
+      },
+      blockExplorerUrls: ['https://kitescan.ai/'],
+      iconUrls: ['https://yourcdn.com/kite.png'] // ⚠️ 换成你的
+    };
+
+    const statusEl = document.getElementById("status");
+
+    function setStatus(msg, isError = false) {
+      statusEl.innerText = msg;
+      statusEl.className = isError ? "status error" : "status";
+    }
+
+    async function connect() {
+      if (!window.ethereum) {
+        setStatus("MetaMask not detected", true);
+        return;
+      }
+
+      try {
+        setStatus("Switching network...");
+
+        // 👉 尝试切换
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainConfig.chainId }]
+        });
+
+        setStatus("✅ Switched to KiteAI");
+
+      } catch (switchError) {
+
+        // 👉 如果链不存在 → 添加
+        if (switchError.code === 4902) {
+          try {
+            setStatus("Adding network...");
+
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [chainConfig]
+            });
+
+            setStatus("✅ Network added!");
+
+          } catch (addError) {
+            console.error(addError);
+            setStatus("Failed to add network: " + addError.message, true);
+          }
+
+        } else {
+          console.error(switchError);
+          setStatus("Switch failed: " + switchError.message, true);
+        }
+      }
+    }
+
+    // 👉 页面加载时检测当前链
+    async function checkNetwork() {
+      if (!window.ethereum) return;
+
+      try {
+        const chainId = await window.ethereum.request({
+          method: 'eth_chainId'
+        });
+
+        if (chainId === chainConfig.chainId) {
+          setStatus("✅ Already on KiteAI");
+        } else {
+          setStatus("Not connected to KiteAI");
+        }
+      } catch (e) {}
+    }
+
+    checkNetwork();
+  </script>
+
+</body>
+</html>
