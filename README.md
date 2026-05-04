@@ -83,7 +83,7 @@ WALLET_ID="$(printf '%s' "$WALLET_JSON" | jq -r '.wallet_id')"
 echo "wallet_id=${WALLET_ID}"
 ```
 
-`wallet import` encrypts the private key locally, fetches the Vault Signer attestation, verifies it, and uploads only attestation-bound ciphertext.
+`wallet import` encrypts the private key locally, fetches the Vault Signer attestation discovery payload, validates it against the Gateway-provided session metadata, and uploads only Capsule P-384 attestation-bound ciphertext.
 
 ### 3. Create And Activate A Policy
 

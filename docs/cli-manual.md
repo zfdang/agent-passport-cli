@@ -40,7 +40,7 @@ These are public Ganache test values. Use them only for demos and never hold rea
 
 ## 3. Wallet Import
 
-Wallet import is an owner action. The CLI verifies the Vault Signer attestation, then encrypts the wallet secret to the attested Capsule runtime before upload.
+Wallet import is an owner action. The CLI fetches the Vault Signer attestation discovery payload, validates it against the Gateway-provided session metadata, then encrypts the wallet secret to the Capsule runtime's attestation-bound P-384 public key before upload.
 
 ```bash
 printf '%s\n' "$TEST_EVM_PRIVATE_KEY" | \

@@ -2,19 +2,20 @@
 
 One of the core value propositions of Agent Passport is the ability to import existing wallet secrets (currently EVM private keys in hex form) into a **Trusted Execution Environment (TEE)** without exposing them to the Passport Gateway or any intermediate infrastructure.
 
-Implementation note as of 2026-04-03:
+Implementation note as of 2026-05-04:
 
 - `kitepass wallet import` currently supports the EVM chain family only
 - the CLI currently normalizes `evm`, `eip155`, and `base` to the same EVM import path
-- the current CLI verifies the attestation discovery payload against Gateway-provided session metadata, expected PCRs, measurement profile data, and reviewed-build metadata before encrypting and uploading the wallet secret
+- the current CLI validates the attestation discovery payload against Gateway-provided session metadata, expected PCRs, measurement profile data, and reviewed-build metadata before encrypting and uploading the wallet secret
+- the current CLI does not yet perform full raw Capsule attestation-chain verification; that remains a production hardening item
 
 ## How it Works
 
-The security of the wallet import flow is based on **P-384 ECDH + AES-256-GCM attestation-bound encryption** and **Remote Attestation**.
+The security of the wallet import flow is based on **P-384 ECDH + AES-256-GCM attestation-bound encryption** plus discovery-payload consistency checks.
 
 ### 1. Remote Attestation
 
-Before you input your private key into the `kitepass-cli`, the CLI performs the following:
+Before upload, the `kitepass-cli` performs the following:
 
 - Requests an **import session** from Gateway.
 - Fetches the Vault Signer **attestation discovery response** from the session-bound attestation endpoint.
@@ -28,7 +29,7 @@ Before you input your private key into the `kitepass-cli`, the CLI performs the 
   - reviewed build ID + digest + source + security model reference
   - expected PCR values (`pcr0`, `pcr1`, `pcr2`)
 
-The current CLI does not treat the Gateway as a blind relay here. It checks that the Vault Signer discovery payload and the Gateway bootstrap metadata agree before continuing.
+The current CLI does not treat the Gateway as a blind relay here. It checks that the Vault Signer discovery payload and the Gateway bootstrap metadata agree before continuing. The stricter future step is to verify the raw Capsule attestation document and trust chain directly.
 
 ### 2. Attestation-Bound Encryption
 
@@ -53,3 +54,7 @@ The encrypted blob (ciphertext) is sent to the Passport Gateway and then forward
 2. **Session And Instance Binding**: The import envelope is bound to the specific import session, principal session, request, and Vault Signer instance.
 3. **Reviewed-Build And Measurement Checks**: The CLI rejects discovery payloads whose PCRs, measurement profile, or reviewed-build metadata do not match the Gateway bootstrap expectations.
 4. **TEE-Only Plaintext Use**: Plaintext wallet material exists only on the owner-controlled CLI surface before encryption and inside Vault Signer TEE memory after decryption.
+
+## Current Limitation
+
+The CLI currently validates the structured attestation bundle and metadata consistency, but it does not yet cryptographically verify the raw Capsule attestation signature chain. Do not describe this flow as full attestation-chain verification until that code path is implemented.
